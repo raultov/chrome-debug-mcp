@@ -3,6 +3,11 @@ name = "chrome-control-mcp"
 version = "0.1.0"
 edition = "2024"
 repository = "https://github.com/raultov/chrome-control-mcp"
+description = "Rust MCP Server for full Chrome CDP control and interactive JS debugging"
+license = "MIT"
+readme = "README.md"
+keywords = ["mcp", "chrome", "cdp", "debugging", "devtools"]
+categories = ["development-tools::debugging"]
 
 [dependencies]
 anyhow = "1.0.102"
