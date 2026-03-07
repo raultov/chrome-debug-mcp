@@ -2,3 +2,4 @@
 out.json
 out.err
 logs/
+*.html
