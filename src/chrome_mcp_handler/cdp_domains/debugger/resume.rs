@@ -32,7 +32,7 @@ impl ResumeTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chrome_mcp_handler::cdp_domains::debugger::tests::spawn_mock_chrome_server;
+    use crate::chrome_mcp_handler::cdp_domains::tests::spawn_mock_chrome_server;
     use crate::chrome_mcp_handler::chrome_instance::MockChromeManager;
     use rust_mcp_sdk::schema::CallToolRequestParams;
     use serde_json::json;
