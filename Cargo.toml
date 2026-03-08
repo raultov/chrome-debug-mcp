@@ -1,8 +1,8 @@
 [package]
-name = "chrome-control-mcp"
-version = "0.1.0"
+name = "chrome-debug-mcp"
+version = "0.2.0"
 edition = "2024"
-repository = "https://github.com/raultov/chrome-control-mcp"
+repository = "https://github.com/raultov/chrome-debug-mcp"
 description = "Rust MCP Server for full Chrome CDP control and interactive JS debugging"
 license = "MIT"
 readme = "README.md"
@@ -14,6 +14,7 @@ anyhow = "1.0.102"
 async-trait = "0.1.89"
 cdp-lite = "0.1.1"
 rust-mcp-sdk = "0.8.3"
+schemars = "0.8"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 tokio = { version = "1.50.0", features = ["full"] }

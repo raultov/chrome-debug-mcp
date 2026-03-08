@@ -1,21 +1,21 @@
+pub mod cdp_domains;
+pub mod chrome_instance;
 pub mod connect_chrome;
-pub mod debugger;
-pub mod page;
-pub mod runtime;
 
-use connect_chrome::ConnectChromeTool;
-use debugger::pause_on_load::PauseOnLoadTool;
-use page::navigate::NavigateTool;
-use page::reload::ReloadTool;
-use runtime::evaluate_js::EvaluateJsTool;
-use runtime::inspect_dom::InspectDomTool;
-
-use debugger::evaluate_on_call_frame::EvaluateOnCallFrameTool;
-use debugger::remove_breakpoint::RemoveBreakpointTool;
-use debugger::resume::ResumeTool;
-use debugger::search_scripts::SearchScriptsTool;
-use debugger::set_breakpoint::SetBreakpointTool;
-use debugger::step_over::StepOverTool;
+// use cdp_domains::debugger;
+use cdp_domains::debugger::evaluate_on_call_frame::EvaluateOnCallFrameTool;
+use cdp_domains::debugger::pause_on_load::PauseOnLoadTool;
+use cdp_domains::debugger::remove_breakpoint::RemoveBreakpointTool;
+use cdp_domains::debugger::resume::ResumeTool;
+use cdp_domains::debugger::search_scripts::SearchScriptsTool;
+use cdp_domains::debugger::set_breakpoint::SetBreakpointTool;
+use cdp_domains::debugger::step_over::StepOverTool;
+use cdp_domains::page::navigate::NavigateTool;
+use cdp_domains::page::reload::ReloadTool;
+use cdp_domains::runtime::evaluate_js::EvaluateJsTool;
+use cdp_domains::runtime::inspect_dom::InspectDomTool;
+use chrome_instance::restart_chrome::RestartChromeTool;
+use chrome_instance::stop_chrome::StopChromeTool;
 
 use async_trait::async_trait;
 use cdp_lite::client::CdpClient;
@@ -40,6 +40,7 @@ pub(crate) struct DebuggerState {
 pub struct ChromeMcpHandler {
     pub(crate) client: Arc<Mutex<Option<CdpClient>>>,
     pub(crate) debugger_state: Arc<Mutex<DebuggerState>>,
+    pub(crate) chrome_manager: Arc<Mutex<chrome_instance::ChromeInstanceManager>>,
 }
 
 impl Default for ChromeMcpHandler {
@@ -47,6 +48,9 @@ impl Default for ChromeMcpHandler {
         Self {
             client: Arc::new(Mutex::new(None)),
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
+            chrome_manager: Arc::new(Mutex::new(chrome_instance::ChromeInstanceManager::new(
+                9222,
+            ))),
         }
     }
 }
@@ -74,9 +78,23 @@ impl ChromeMcpHandler {
     pub(crate) async fn get_or_connect(
         &self,
     ) -> std::result::Result<tokio::sync::MutexGuard<'_, Option<CdpClient>>, CallToolError> {
+        // First ensure instance is running
+        {
+            let mut manager = self.chrome_manager.lock().await;
+            manager.ensure_instance().await.map_err(|e| {
+                CallToolError::from_message(format!("Failed to ensure Chrome instance: {}", e))
+            })?;
+        }
+
         let mut client_lock = self.client.lock().await;
         if client_lock.is_none() {
-            match CdpClient::new("127.0.0.1:9222", Duration::from_secs(5)).await {
+            let port = {
+                let manager = self.chrome_manager.lock().await;
+                manager.get_port()
+            };
+
+            let addr = format!("127.0.0.1:{}", port);
+            match CdpClient::new(&addr, Duration::from_secs(10)).await {
                 Ok(mut client) => {
                     let _ = client
                         .send_raw_command("Runtime.enable", cdp_lite::protocol::NoParams)
@@ -85,7 +103,10 @@ impl ChromeMcpHandler {
                         .send_raw_command("Page.enable", cdp_lite::protocol::NoParams)
                         .await;
 
-                    debugger::start_debugger_listener(&mut client, self.debugger_state.clone());
+                    cdp_domains::debugger::start_debugger_listener(
+                        &mut client,
+                        self.debugger_state.clone(),
+                    );
 
                     let _ = client
                         .send_raw_command("Debugger.enable", cdp_lite::protocol::NoParams)
@@ -93,8 +114,11 @@ impl ChromeMcpHandler {
 
                     *client_lock = Some(client);
                 }
-                Err(_) => {
-                    return Err(CallToolError::from_message("Not connected to Chrome. Use connect_chrome tool first, or ensure Chrome is running with --remote-debugging-port=9222".to_string()));
+                Err(e) => {
+                    return Err(CallToolError::from_message(format!(
+                        "Failed to connect to Chrome at {}: {}",
+                        addr, e
+                    )));
                 }
             }
         }
@@ -112,7 +136,6 @@ impl ServerHandler for ChromeMcpHandler {
         Ok(ListToolsResult {
             tools: vec![
                 EvaluateJsTool::tool(),
-                ConnectChromeTool::tool(),
                 NavigateTool::tool(),
                 InspectDomTool::tool(),
                 PauseOnLoadTool::tool(),
@@ -123,6 +146,8 @@ impl ServerHandler for ChromeMcpHandler {
                 EvaluateOnCallFrameTool::tool(),
                 ReloadTool::tool(),
                 RemoveBreakpointTool::tool(),
+                RestartChromeTool::tool(),
+                StopChromeTool::tool(),
             ],
             meta: None,
             next_cursor: None,
@@ -134,9 +159,7 @@ impl ServerHandler for ChromeMcpHandler {
         params: CallToolRequestParams,
         _runtime: std::sync::Arc<dyn McpServer>,
     ) -> std::result::Result<CallToolResult, CallToolError> {
-        if params.name == "connect_chrome" {
-            ConnectChromeTool::handle(params, self).await
-        } else if params.name == "evaluate_js" {
+        if params.name == "evaluate_js" {
             EvaluateJsTool::handle(params, self).await
         } else if params.name == "navigate" {
             NavigateTool::handle(params, self).await
@@ -158,6 +181,10 @@ impl ServerHandler for ChromeMcpHandler {
             RemoveBreakpointTool::handle(params, self).await
         } else if params.name == "reload" {
             ReloadTool::handle(params, self).await
+        } else if params.name == "restart_chrome" {
+            RestartChromeTool::handle(params, self).await
+        } else if params.name == "stop_chrome" {
+            StopChromeTool::handle(params, self).await
         } else {
             Err(CallToolError::unknown_tool(params.name))
         }

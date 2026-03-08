@@ -1,17 +1,22 @@
-# chrome-control-mcp
+# chrome-debug-mcp
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/rust-stable-brightgreen.svg)](https://www.rust-lang.org)
 
-**chrome-control-mcp** is an asynchronous Rust-based **Model Context Protocol (MCP)** server that allows AI agents and Large Language Models to natively control, automate, and debug Chromium-based browsers via the **Chrome DevTools Protocol (CDP)**.
+**chrome-debug-mcp** is an asynchronous Rust-based **Model Context Protocol (MCP)** server that allows AI agents and Large Language Models to natively control, automate, and debug Chromium-based browsers via the **Chrome DevTools Protocol (CDP)**.
 
-Using `cdp-lite` underneath, this MCP server directly hooks into the browser avoiding heavy abstractions, enabling live-debugging sessions directly from your editor or chat-interface.
+Using `cdp-lite` underneath, this MCP server directly hooks into the browser avoiding heavy abstractions, enabling live-debugging sessions directly from your editor or chat-interface. Starting from v0.2.0, it can also manage the Chrome process lifecycle automatically.
 
 ---
 
-## ✨ Features (v0.1.0)
+## ✨ Features (v0.2.0)
 
-This server natively implements a suite of tools categorized by CDP domains:
+This server natively implements a suite of tools categorized by CDP domains and native process management:
+
+**🚀 Chrome Instance Management (v0.2.0)**
+* **Auto-Launch**: Automatically detects if Chrome is running on port 9222. If not, it spawns a new instance with the required flags.
+* `restart_chrome`: Restarts the managed Chrome instance.
+* `stop_chrome`: Shuts down the managed Chrome instance.
 
 **🌐 Page & Runtime Control**
 * `connect_chrome`: Establish connection to a Chrome CDP remote debugging port (e.g. `127.0.0.1:9222`).
@@ -42,14 +47,14 @@ google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/remote-profile
 ```
 
 ### 2. Configure MCP Client
-You can use the pre-built binaries from the [Releases](https://github.com/raultov/chrome-control-mcp/releases) page, or compile it locally via `cargo build --release`. 
+You can use the pre-built binaries from the [Releases](https://github.com/raultov/chrome-debug-mcp/releases) page, or compile it locally via `cargo build --release`. 
 
 Example of a standard MCP client `config.json`:
 ```json
 {
   "mcpServers": {
-    "chrome-control-mcp": {
-      "command": "/path/to/bin/chrome-control-mcp",
+    "chrome-debug-mcp": {
+      "command": "/path/to/bin/chrome-debug-mcp",
       "args": [],
       "env": {}
     }
@@ -66,12 +71,12 @@ Then, instruct the LLM (e.g., using `connect_chrome`) to attach to `127.0.0.1:92
 Require Rust toolchain installed:
 
 ```bash
-git clone https://github.com/raultov/chrome-control-mcp
-cd chrome-control-mcp
+git clone https://github.com/raultov/chrome-debug-mcp
+cd chrome-debug-mcp
 cargo build --release
 ```
 
-The resulting binary will be located in `target/release/chrome-control-mcp`.
+The resulting binary will be located in `target/release/chrome-debug-mcp`.
 
 ---
 

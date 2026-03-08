@@ -9,8 +9,8 @@ async fn main() -> SdkResult<()> {
         server_info: Implementation {
             name: env!("CARGO_PKG_NAME").into(),
             version: env!("CARGO_PKG_VERSION").into(),
-            title: Some("Chrome Control MCP".into()),
-            description: Some("Control and debug Chrome through CDP".into()),
+            title: Some("Chrome Debug MCP".into()),
+            description: Some("Inspect and debug frontend code at runtime using CDP. Enable breakpoints and live code inspection to debug complex issues like race conditions in 'vibe coding' projects, providing LLMs with runtime state access.".into()),
             icons: vec![] as Vec<Icon>,
             website_url: None,
         },
@@ -33,5 +33,9 @@ async fn main() -> SdkResult<()> {
         client_task_store: None,
     });
 
-    server.start().await
+    if let Err(e) = server.start().await {
+        eprintln!("Server error: {:?}", e);
+        return Err(e);
+    }
+    Ok(())
 }

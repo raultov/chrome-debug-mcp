@@ -11,11 +11,13 @@ use std::time::Duration;
     description = "Connect to Chrome CDP (e.g. 127.0.0.1:9222)"
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
+#[allow(dead_code)]
 pub struct ConnectChromeTool {
     pub url: String,
 }
 
 impl ConnectChromeTool {
+    #[allow(dead_code)]
     pub async fn handle(
         params: CallToolRequestParams,
         handler: &ChromeMcpHandler,
