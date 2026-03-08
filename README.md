@@ -19,7 +19,6 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * `stop_chrome`: Shuts down the managed Chrome instance.
 
 **🌐 Page & Runtime Control**
-* `connect_chrome`: Establish connection to a Chrome CDP remote debugging port (e.g. `127.0.0.1:9222`).
 * `navigate`: Navigate the active tab to a specific URL.
 * `reload`: Reload the current page.
 * `inspect_dom`: Extract the entire HTML payload of the current document.
@@ -62,7 +61,7 @@ Example of a standard MCP client `config.json`:
 }
 ```
 
-Then, instruct the LLM (e.g., using `connect_chrome`) to attach to `127.0.0.1:9222`.
+The server will automatically try to connect to Chrome on the default port (9222).
 
 ---
 

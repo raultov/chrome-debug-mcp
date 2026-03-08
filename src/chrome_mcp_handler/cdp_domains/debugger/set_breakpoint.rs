@@ -27,6 +27,12 @@ impl SetBreakpointTool {
         let args: SetBreakpointTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
 
+        if args.script_id.is_none() && args.url.is_none() && args.script_hash.is_none() {
+            return Err(CallToolError::from_message(
+                "Either script_id, url or script_hash must be provided",
+            ));
+        }
+
         let mut client_lock = handler.get_or_connect().await?;
         let cdp_client = client_lock.as_mut().unwrap();
 
@@ -91,35 +97,61 @@ impl SetBreakpointTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chrome_mcp_handler::cdp_domains::debugger::tests::spawn_mock_chrome_server;
+    use crate::chrome_mcp_handler::chrome_instance::MockChromeManager;
     use rust_mcp_sdk::schema::CallToolRequestParams;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
 
     #[tokio::test]
     async fn test_set_breakpoint_validation() {
-        let handler = ChromeMcpHandler::new_with_port(9999);
-        
+        let handler = ChromeMcpHandler::new_test();
+
         // Missing all identifiers
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "set_breakpoint",
             "arguments": {
                 "line_number": 10
             }
-        })).unwrap();
+        }))
+        .unwrap();
         let result = SetBreakpointTool::handle(params, &handler).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Either script_id, url or script_hash must be provided"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Either script_id, url or script_hash must be provided")
+        );
+    }
 
-        // With identifier, fails at connection
+    #[tokio::test]
+    async fn test_set_breakpoint_handle() {
+        let port = spawn_mock_chrome_server().await;
+
+        let mut handler = ChromeMcpHandler::new_test();
+        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "set_breakpoint",
             "arguments": {
                 "script_id": "1",
-                "line_number": 10
+                "line_number": 10,
+                "column_number": 5
             }
-        })).unwrap();
+        }))
+        .unwrap();
+
         let result = SetBreakpointTool::handle(params, &handler).await;
-        if let Err(e) = result {
-            let msg = e.to_string();
-            assert!(msg.contains("Failed") || msg.contains("connect") || msg.contains("Timed out"));
-        }
+        assert!(result.is_ok(), "Handle should succeed: {:?}", result.err());
+
+        let call_result = result.unwrap();
+        assert!(!call_result.content.is_empty());
+        let content_str = format!("{:?}", call_result.content);
+        assert!(
+            content_str.contains("Breakpoint set successfully"),
+            "Content didn't match: {}",
+            content_str
+        );
     }
 }

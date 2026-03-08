@@ -23,6 +23,17 @@ impl SearchScriptsTool {
         let args: SearchScriptsTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
 
+        // Check empty query BEFORE connecting — this is a pure state query
+        if args.query.is_empty() {
+            let scripts = {
+                let state = handler.debugger_state.lock().await;
+                state.scripts.clone()
+            };
+            return Ok(CallToolResult::text_content(vec![
+                format!("Total cached scripts: {}", scripts.len()).into(),
+            ]));
+        }
+
         let mut client_lock = handler.get_or_connect().await?;
         let cdp_client = client_lock.as_mut().unwrap();
 
@@ -30,12 +41,6 @@ impl SearchScriptsTool {
             let state = handler.debugger_state.lock().await;
             state.scripts.clone()
         };
-
-        if args.query.is_empty() {
-            return Ok(CallToolResult::text_content(vec![
-                format!("Total cached scripts: {}", scripts.len()).into(),
-            ]));
-        }
 
         let mut results = vec![];
         let mut errors = vec![];
@@ -99,42 +104,118 @@ impl SearchScriptsTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chrome_mcp_handler::ScriptInfo;
+    use crate::chrome_mcp_handler::cdp_domains::debugger::tests::spawn_mock_chrome_server;
+    use crate::chrome_mcp_handler::chrome_instance::MockChromeManager;
     use rust_mcp_sdk::schema::CallToolRequestParams;
     use serde_json::json;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
 
     #[tokio::test]
-    async fn test_search_scripts_empty_query() {
-        let handler = ChromeMcpHandler::default();
+    async fn test_search_scripts_empty_query_returns_cached_count() {
+        let handler = ChromeMcpHandler::new_test();
+
+        // Prepopulate 3 scripts in state
+        {
+            let mut st = handler.debugger_state.lock().await;
+            for i in 0..3 {
+                st.scripts.insert(
+                    format!("script-{}", i),
+                    ScriptInfo {
+                        hash: format!("hash-{}", i),
+                        start_line: 0,
+                        start_column: 0,
+                    },
+                );
+            }
+        }
+
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "search_scripts",
             "arguments": {
                 "query": ""
             }
-        })).unwrap();
+        }))
+        .unwrap();
 
         let result = SearchScriptsTool::handle(params, &handler).await;
         assert!(result.is_ok());
         let res = result.unwrap();
         let res_json = serde_json::to_value(&res).unwrap();
-        println!("DEBUG_JSON: {}", serde_json::to_string_pretty(&res_json).unwrap());
-        // Should contain result text, count doesn't matter as it depends on environment
-        assert!(res_json["content"][0]["text"].as_str().unwrap().contains("Total cached scripts"));
+        let text = res_json["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Total cached scripts: 3"));
     }
 
     #[tokio::test]
-    async fn test_search_scripts_with_query_fails_connection() {
-        let handler = ChromeMcpHandler::new_with_port(9999);
+    async fn test_search_scripts_empty_query_with_no_scripts() {
+        let handler = ChromeMcpHandler::new_test();
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "search_scripts",
             "arguments": {
-                "query": "test"
+                "query": ""
             }
-        })).unwrap();
+        }))
+        .unwrap();
 
         let result = SearchScriptsTool::handle(params, &handler).await;
-        if let Err(e) = result {
-             let msg = e.to_string();
-             assert!(msg.contains("Failed") || msg.contains("connect") || msg.contains("Timed out"));
+        assert!(result.is_ok());
+        let res = result.unwrap();
+        let res_json = serde_json::to_value(&res).unwrap();
+        let text = res_json["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("Total cached scripts: 0"));
+    }
+
+    #[tokio::test]
+    async fn test_search_scripts_missing_query_fails_deserialization() {
+        let handler = ChromeMcpHandler::new_test();
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "search_scripts",
+            "arguments": {}
+        }))
+        .unwrap();
+
+        let result = SearchScriptsTool::handle(params, &handler).await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("missing field `query`")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_search_scripts_handle() {
+        let port = spawn_mock_chrome_server().await;
+
+        let mut handler = ChromeMcpHandler::new_test();
+        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+
+        {
+            let mut st = handler.debugger_state.lock().await;
+            st.scripts.insert(
+                "mock-script-id".to_string(),
+                ScriptInfo {
+                    hash: "mock-hash".to_string(),
+                    start_line: 0,
+                    start_column: 0,
+                },
+            );
         }
+
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "search_scripts",
+            "arguments": {
+                "query": "something"
+            }
+        }))
+        .unwrap();
+
+        let result = SearchScriptsTool::handle(params, &handler).await;
+        assert!(result.is_ok(), "Handle should succeed: {:?}", result.err());
+
+        let call_result = result.unwrap();
+        assert!(!call_result.content.is_empty());
     }
 }

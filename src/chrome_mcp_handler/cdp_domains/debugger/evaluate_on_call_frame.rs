@@ -23,8 +23,18 @@ impl EvaluateOnCallFrameTool {
         let args: EvaluateOnCallFrameTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
 
-        let mut client_lock = handler.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
+        // Validation: check if we have a paused call frame ID FIRST
+        {
+            let st = handler.debugger_state.lock().await;
+            if st.paused_call_frame_id.is_none() {
+                return Err(CallToolError::from_message(
+                    "No active call frame ID stored in debugger state.",
+                ));
+            }
+        }
+
+        let mut chrome_handler_lock = handler.get_or_connect().await?;
+        let cdp_client = chrome_handler_lock.as_mut().unwrap();
 
         let call_frame_id = {
             let state = handler.debugger_state.lock().await;
@@ -62,13 +72,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_evaluate_on_call_frame_no_frame_error() {
-        let handler = ChromeMcpHandler::new_with_port(9999);
+        let handler = ChromeMcpHandler::new_test();
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "evaluate_on_call_frame",
             "arguments": {
                 "expression": "1 + 1"
             }
-        })).unwrap();
+        }))
+        .unwrap();
 
         let result = EvaluateOnCallFrameTool::handle(params, &handler).await;
         assert!(result.is_err());

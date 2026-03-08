@@ -1,6 +1,5 @@
 pub mod cdp_domains;
 pub mod chrome_instance;
-pub mod connect_chrome;
 
 // use cdp_domains::debugger;
 use cdp_domains::debugger::evaluate_on_call_frame::EvaluateOnCallFrameTool;
@@ -40,7 +39,7 @@ pub(crate) struct DebuggerState {
 pub struct ChromeMcpHandler {
     pub(crate) client: Arc<Mutex<Option<CdpClient>>>,
     pub(crate) debugger_state: Arc<Mutex<DebuggerState>>,
-    pub(crate) chrome_manager: Arc<Mutex<chrome_instance::ChromeInstanceManager>>,
+    pub(crate) chrome_manager: Arc<Mutex<dyn chrome_instance::ChromeManager>>,
 }
 
 impl ChromeMcpHandler {
@@ -51,6 +50,15 @@ impl ChromeMcpHandler {
             chrome_manager: Arc::new(Mutex::new(chrome_instance::ChromeInstanceManager::new(
                 port,
             ))),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn new_test() -> Self {
+        Self {
+            client: Arc::new(Mutex::new(None)),
+            debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
+            chrome_manager: Arc::new(Mutex::new(chrome_instance::MockChromeManager::new(9999))),
         }
     }
 }
