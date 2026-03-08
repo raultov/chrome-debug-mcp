@@ -8,11 +8,17 @@ use std::time::Duration;
 pub struct ChromeInstanceManager {
     child: Option<Child>,
     port: u16,
+    user_data_dir: std::path::PathBuf,
 }
 
 impl ChromeInstanceManager {
     pub fn new(port: u16) -> Self {
-        Self { child: None, port }
+        let user_data_dir = std::env::temp_dir().join(format!("chrome-mcp-profile-{}", port));
+        Self {
+            child: None,
+            port,
+            user_data_dir,
+        }
     }
 
     pub fn get_port(&self) -> u16 {
@@ -79,7 +85,6 @@ impl ChromeInstanceManager {
             ],
         };
 
-        let profile_dir = std::env::temp_dir().join(format!("chrome-mcp-profile-{}", self.port));
 
         let _ = self.log(&format!(
             "Starting new Chrome instance on port {} for OS {}...",
@@ -94,7 +99,10 @@ impl ChromeInstanceManager {
                 .arg("--remote-allow-origins=*")
                 .arg("--no-first-run")
                 .arg("--no-default-browser-check")
-                .arg(format!("--user-data-dir={}", profile_dir.to_string_lossy()))
+                .arg(format!("--user-data-dir={}", self.user_data_dir.to_string_lossy()))
+                .arg("--disable-session-crashed-bubble")
+                .arg("--disable-infobars")
+                .arg("--noerrdialogs")
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .stdin(Stdio::null())
@@ -158,6 +166,12 @@ impl ChromeInstanceManager {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status();
+        }
+
+        // Cleanup SingletonLock to prevent "Chrome didn't shut down correctly"
+        let lock_file = self.user_data_dir.join("SingletonLock");
+        if lock_file.exists() {
+            let _ = std::fs::remove_file(lock_file);
         }
 
         Ok(())

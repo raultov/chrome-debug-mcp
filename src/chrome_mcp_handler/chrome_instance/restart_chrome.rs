@@ -18,6 +18,12 @@ impl RestartChromeTool {
     ) -> Result<CallToolResult, CallToolError> {
         let mut manager = handler.chrome_manager.lock().await;
 
+        // Reset the client connection before stopping/starting
+        {
+            let mut client_lock = handler.client.lock().await;
+            *client_lock = None;
+        }
+
         if let Err(e) = manager.stop_instance() {
             return Err(CallToolError::from_message(format!(
                 "Failed to stop Chrome: {}",

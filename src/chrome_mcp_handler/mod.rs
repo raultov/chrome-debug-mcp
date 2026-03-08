@@ -43,15 +43,21 @@ pub struct ChromeMcpHandler {
     pub(crate) chrome_manager: Arc<Mutex<chrome_instance::ChromeInstanceManager>>,
 }
 
-impl Default for ChromeMcpHandler {
-    fn default() -> Self {
+impl ChromeMcpHandler {
+    pub fn new_with_port(port: u16) -> Self {
         Self {
             client: Arc::new(Mutex::new(None)),
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::ChromeInstanceManager::new(
-                9222,
+                port,
             ))),
         }
+    }
+}
+
+impl Default for ChromeMcpHandler {
+    fn default() -> Self {
+        Self::new_with_port(9222)
     }
 }
 

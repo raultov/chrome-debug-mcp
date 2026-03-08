@@ -44,3 +44,34 @@ impl RemoveBreakpointTool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_mcp_sdk::schema::CallToolRequestParams;
+
+    #[tokio::test]
+    async fn test_remove_breakpoint_validation() {
+        let handler = ChromeMcpHandler::new_with_port(9999);
+        
+        // Test missing argument
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "remove_breakpoint",
+            "arguments": {}
+        })).unwrap();
+        let result = RemoveBreakpointTool::handle(params, &handler).await;
+        assert!(result.is_err());
+
+        // Test with argument
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "remove_breakpoint",
+            "arguments": {
+                "breakpoint_id": "test-id"
+            }
+        })).unwrap();
+        let result = RemoveBreakpointTool::handle(params, &handler).await;
+        if let Err(e) = &result {
+            assert!(e.to_string().contains("Failed to connect") || e.to_string().contains("Timed out"));
+        }
+    }
+}

@@ -28,3 +28,26 @@ impl ResumeTool {
         ]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_mcp_sdk::schema::CallToolRequestParams;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_resume_structural() {
+        let handler = ChromeMcpHandler::default();
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "resume",
+            "arguments": {}
+        })).unwrap();
+
+        let result = ResumeTool::handle(params, &handler).await;
+        // Should succeed or fail at protocol/connection level, but not validation
+        if let Err(e) = result {
+             let msg = e.to_string();
+             assert!(msg.contains("Failed") || msg.contains("connect") || msg.contains("paused") || msg.contains("Timed out"));
+        }
+    }
+}

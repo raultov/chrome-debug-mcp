@@ -50,3 +50,25 @@ impl PauseOnLoadTool {
         ]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_mcp_sdk::schema::CallToolRequestParams;
+
+    #[tokio::test]
+    async fn test_pause_on_load_structural() {
+        let handler = ChromeMcpHandler::new_with_port(9999);
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "pause_on_load",
+            "arguments": {}
+        })).unwrap();
+
+        // If it fails, it should be a connection error, not a validation error.
+        // It might succeed if it spawns Chrome on 9999.
+        let result = PauseOnLoadTool::handle(params, &handler).await;
+        if let Err(e) = result {
+             assert!(e.to_string().contains("Failed to connect") || e.to_string().contains("Timed out"));
+        }
+    }
+}

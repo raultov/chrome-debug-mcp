@@ -29,3 +29,25 @@ impl StepOverTool {
         ]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_mcp_sdk::schema::CallToolRequestParams;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_step_over_structural() {
+        let handler = ChromeMcpHandler::default();
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "step_over",
+            "arguments": {}
+        })).unwrap();
+
+        let result = StepOverTool::handle(params, &handler).await;
+        if let Err(e) = result {
+             let msg = e.to_string();
+             assert!(msg.contains("Failed") || msg.contains("connect") || msg.contains("paused") || msg.contains("Timed out"));
+        }
+    }
+}

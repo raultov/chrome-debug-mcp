@@ -87,3 +87,39 @@ impl SetBreakpointTool {
         ]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_mcp_sdk::schema::CallToolRequestParams;
+
+    #[tokio::test]
+    async fn test_set_breakpoint_validation() {
+        let handler = ChromeMcpHandler::new_with_port(9999);
+        
+        // Missing all identifiers
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "set_breakpoint",
+            "arguments": {
+                "line_number": 10
+            }
+        })).unwrap();
+        let result = SetBreakpointTool::handle(params, &handler).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Either script_id, url or script_hash must be provided"));
+
+        // With identifier, fails at connection
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "set_breakpoint",
+            "arguments": {
+                "script_id": "1",
+                "line_number": 10
+            }
+        })).unwrap();
+        let result = SetBreakpointTool::handle(params, &handler).await;
+        if let Err(e) = result {
+            let msg = e.to_string();
+            assert!(msg.contains("Failed") || msg.contains("connect") || msg.contains("Timed out"));
+        }
+    }
+}

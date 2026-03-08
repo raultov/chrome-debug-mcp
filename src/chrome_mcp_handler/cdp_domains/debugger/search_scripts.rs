@@ -95,3 +95,46 @@ impl SearchScriptsTool {
         ]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_mcp_sdk::schema::CallToolRequestParams;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn test_search_scripts_empty_query() {
+        let handler = ChromeMcpHandler::default();
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "search_scripts",
+            "arguments": {
+                "query": ""
+            }
+        })).unwrap();
+
+        let result = SearchScriptsTool::handle(params, &handler).await;
+        assert!(result.is_ok());
+        let res = result.unwrap();
+        let res_json = serde_json::to_value(&res).unwrap();
+        println!("DEBUG_JSON: {}", serde_json::to_string_pretty(&res_json).unwrap());
+        // Should contain result text, count doesn't matter as it depends on environment
+        assert!(res_json["content"][0]["text"].as_str().unwrap().contains("Total cached scripts"));
+    }
+
+    #[tokio::test]
+    async fn test_search_scripts_with_query_fails_connection() {
+        let handler = ChromeMcpHandler::new_with_port(9999);
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "search_scripts",
+            "arguments": {
+                "query": "test"
+            }
+        })).unwrap();
+
+        let result = SearchScriptsTool::handle(params, &handler).await;
+        if let Err(e) = result {
+             let msg = e.to_string();
+             assert!(msg.contains("Failed") || msg.contains("connect") || msg.contains("Timed out"));
+        }
+    }
+}

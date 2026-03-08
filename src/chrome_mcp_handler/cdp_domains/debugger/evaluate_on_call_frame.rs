@@ -54,3 +54,25 @@ impl EvaluateOnCallFrameTool {
         ]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_mcp_sdk::schema::CallToolRequestParams;
+
+    #[tokio::test]
+    async fn test_evaluate_on_call_frame_no_frame_error() {
+        let handler = ChromeMcpHandler::new_with_port(9999);
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "evaluate_on_call_frame",
+            "arguments": {
+                "expression": "1 + 1"
+            }
+        })).unwrap();
+
+        let result = EvaluateOnCallFrameTool::handle(params, &handler).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("No active call frame ID stored"));
+    }
+}
