@@ -9,11 +9,11 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.2.2)
+## ✨ Features (v0.2.3)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
-**🚀 Chrome Instance Management (v0.2.2)**
+**🚀 Chrome Instance Management (v0.2.3)**
 * **Auto-Launch**: Automatically detects if Chrome is running on port 9222. If not, it spawns a new instance with the required flags.
 * `restart_chrome`: Restarts the managed Chrome instance.
 * `stop_chrome`: Shuts down the managed Chrome instance gracefully (SIGTERM/SIGINT with fallback to SIGKILL).
@@ -43,37 +43,43 @@ This server natively implements a suite of tools categorized by CDP domains and 
 
 ## 🚀 Quick Start
 
-To use this server, you must have an MCP compatible client (like Claude Desktop, Zed, Cursor, etc.). You must configure the client to execute the server binary.
+The easiest way to install and run the MCP Server natively is via Rust's Cargo or by downloading the pre-compiled binaries. You **do not** need to start Chrome manually anymore, the MCP Server will automatically launch a visible instance of Chrome with the correct debugging flags.
 
-### 1. Launch Chrome in Debugging Mode
-Before issuing commands, make sure your browser is listening for remote CDP connections:
-```sh
-google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/remote-profile
+### 1. Installation
+
+**Option A: Pre-compiled Binaries (Recommended)**
+Go to the [Releases](https://github.com/raultov/chrome-debug-mcp/releases) page and download the native executable for your platform (macOS, Windows, Linux). We provide `.msi` installers for Windows and shell scripts for UNIX systems.
+
+**Option B: Install via Cargo**
+```bash
+cargo install --git https://github.com/raultov/chrome-debug-mcp
 ```
 
-### 2. Configure MCP Client
-You can use the pre-built binaries from the [Releases](https://github.com/raultov/chrome-debug-mcp/releases) page, or compile it locally via `cargo build --release`. 
+### 2. Configure your MCP Client
+Configure your AI client (like Claude Desktop, Zed, Cursor, or Gemini CLI) to execute the installed binary.
 
-Example of a standard MCP client `config.json`:
+Example configuration for Claude Desktop (`claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
     "chrome-debug-mcp": {
-      "command": "/path/to/bin/chrome-debug-mcp",
+      "command": "chrome-debug-mcp",
       "args": [],
       "env": {}
     }
   }
 }
 ```
+*Note: If you downloaded the binary manually, replace `"chrome-debug-mcp"` with the absolute path to the executable.*
 
-The server will automatically try to connect to Chrome on the default port (9222).
+### 3. Usage
+Once connected, the AI agent will automatically handle starting Chrome when the first command is executed. The browser will remain visible so you can visually track the debugging process.
 
 ---
 
 ## 🛠 Compilation (From Source)
 
-Require Rust toolchain installed:
+If you wish to compile from source:
 
 ```bash
 git clone https://github.com/raultov/chrome-debug-mcp
@@ -81,7 +87,7 @@ cd chrome-debug-mcp
 cargo build --release
 ```
 
-The resulting binary will be located in `target/release/chrome-debug-mcp`.
+The resulting binary will be located in `target/release/chrome-debug-mcp`. This project utilizes `cargo-dist` to handle cross-platform native distribution seamlessly via GitHub Actions.
 
 ---
 
