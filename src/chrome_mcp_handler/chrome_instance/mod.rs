@@ -80,16 +80,9 @@ impl ChromeInstanceManager {
             .arg("--disable-gpu")
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
-            // Flags for stability and avoiding crash bubbles
             .arg("--disable-session-crashed-bubble")
             .arg("--disable-infobars")
             .arg("--noerrdialogs")
-            // HEADLESS IS OPTIONAL but user wants it visible usually.
-            // In the previous version it was headless. Let's keep it as is
-            // but the user's screenshot was headed.
-            // Actually, the user's screenshot was HEADED.
-            // Let's remove --headless if we want to match the screenshot or just leave it.
-            // The screenshot showed a headed browser.
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
