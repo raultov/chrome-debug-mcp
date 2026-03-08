@@ -9,11 +9,11 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.2.3)
+## ✨ Features (v0.2.4)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
-**🚀 Chrome Instance Management (v0.2.3)**
+**🚀 Chrome Instance Management (v0.2.4)**
 * **Auto-Launch**: Automatically detects if Chrome is running on port 9222. If not, it spawns a new instance with the required flags.
 * `restart_chrome`: Restarts the managed Chrome instance.
 * `stop_chrome`: Shuts down the managed Chrome instance gracefully (SIGTERM/SIGINT with fallback to SIGKILL).
