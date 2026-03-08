@@ -55,6 +55,11 @@ Go to the [Releases](https://github.com/raultov/chrome-debug-mcp/releases) page 
 cargo install --git https://github.com/raultov/chrome-debug-mcp
 ```
 
+**Option C: Install via Shell Script (Unix)**
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/raultov/chrome-debug-mcp/releases/latest/download/chrome-debug-mcp-installer.sh | sh
+```
+
 ### 2. Configure your MCP Client
 Configure your AI client (like Claude Desktop, Zed, Cursor, or Gemini CLI) to execute the installed binary.
 
