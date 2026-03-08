@@ -9,14 +9,15 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.2.0)
+## ✨ Features (v0.2.2)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
-**🚀 Chrome Instance Management (v0.2.0)**
+**🚀 Chrome Instance Management (v0.2.2)**
 * **Auto-Launch**: Automatically detects if Chrome is running on port 9222. If not, it spawns a new instance with the required flags.
 * `restart_chrome`: Restarts the managed Chrome instance.
-* `stop_chrome`: Shuts down the managed Chrome instance.
+* `stop_chrome`: Shuts down the managed Chrome instance gracefully (SIGTERM/SIGINT with fallback to SIGKILL).
+* **Robust Lifecycle**: Fixed issues with dangling Chrome processes and patched preferences for cleaner restarts.
 
 **🌐 Page & Runtime Control**
 * `navigate`: Navigate the active tab to a specific URL.
@@ -32,6 +33,11 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * `step_over`: Step over the next expression line.
 * `resume`: Unpause and resume the execution.
 * `remove_breakpoint`: Remove a previously set breakpoint.
+
+**🧪 Stability & Reliability**
+* **Extensive Unit Testing**: Comprehensive test suite ensuring the reliability of event processing and tool deserialization, particularly in the `debugger` domain.
+* **Side-Effect Free Tests**: All unit tests are designed to run in isolation, without launching real Chrome instances or modifying the filesystem.
+* **Internal Refactoring**: Decoupled core logic through traits and dependency injection to ensure long-term maintainability.
 
 ---
 

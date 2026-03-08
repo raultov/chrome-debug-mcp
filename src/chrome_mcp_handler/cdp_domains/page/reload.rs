@@ -30,3 +30,55 @@ impl ReloadTool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chrome_mcp_handler::cdp_domains::tests::spawn_mock_chrome_server;
+    use crate::chrome_mcp_handler::chrome_instance::MockChromeManager;
+    use rust_mcp_sdk::schema::CallToolRequestParams;
+    use serde_json::json;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn test_reload_params_deserialization() {
+        let params: Result<CallToolRequestParams, _> = serde_json::from_value(json!({
+            "name": "reload",
+            "arguments": {}
+        }));
+        assert!(params.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_reload_tool_deserialization() {
+        let tool: Result<ReloadTool, _> = serde_json::from_value(json!({}));
+        assert!(tool.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_reload_handle() {
+        let port = spawn_mock_chrome_server().await;
+
+        let mut handler = ChromeMcpHandler::new_test();
+        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "reload",
+            "arguments": {}
+        }))
+        .unwrap();
+
+        let result = ReloadTool::handle(params, &handler).await;
+        assert!(result.is_ok(), "Handle should succeed: {:?}", result.err());
+
+        let call_result = result.unwrap();
+        assert!(!call_result.content.is_empty());
+        let content_str = format!("{:?}", call_result.content);
+        assert!(
+            content_str.contains("Page reloaded"),
+            "Content didn't match: {}",
+            content_str
+        );
+    }
+}

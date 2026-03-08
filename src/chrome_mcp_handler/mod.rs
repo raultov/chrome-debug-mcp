@@ -204,3 +204,138 @@ impl ServerHandler for ChromeMcpHandler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    struct DummyMcpServer {}
+
+    // A dummy implementation of McpServer for testing
+    #[async_trait]
+    impl McpServer for DummyMcpServer {
+        async fn start(self: Arc<Self>) -> rust_mcp_sdk::error::SdkResult<()> {
+            Ok(())
+        }
+        async fn set_client_details(
+            &self,
+            _client_details: rust_mcp_sdk::schema::InitializeRequestParams,
+        ) -> rust_mcp_sdk::error::SdkResult<()> {
+            Ok(())
+        }
+        fn server_info(&self) -> &rust_mcp_sdk::schema::InitializeResult {
+            unimplemented!()
+        }
+        fn client_info(&self) -> Option<rust_mcp_sdk::schema::InitializeRequestParams> {
+            None
+        }
+        async fn auth_info(
+            &self,
+        ) -> tokio::sync::RwLockReadGuard<'_, Option<rust_mcp_sdk::auth::AuthInfo>> {
+            unimplemented!()
+        }
+        async fn auth_info_cloned(&self) -> Option<rust_mcp_sdk::auth::AuthInfo> {
+            None
+        }
+        async fn update_auth_info(&self, _auth_info: Option<rust_mcp_sdk::auth::AuthInfo>) {}
+        async fn wait_for_initialization(&self) {}
+        fn task_store(&self) -> Option<Arc<rust_mcp_sdk::task_store::ServerTaskStore>> {
+            None
+        }
+        fn client_task_store(&self) -> Option<Arc<rust_mcp_sdk::task_store::ClientTaskStore>> {
+            None
+        }
+        async fn stderr_message(&self, _message: String) -> rust_mcp_sdk::error::SdkResult<()> {
+            Ok(())
+        }
+        fn session_id(&self) -> Option<String> {
+            None
+        }
+        async fn send(
+            &self,
+            _message: rust_mcp_sdk::schema::schema_utils::MessageFromServer,
+            _request_id: Option<rust_mcp_sdk::schema::RequestId>,
+            _request_timeout: Option<std::time::Duration>,
+        ) -> rust_mcp_sdk::error::SdkResult<Option<rust_mcp_sdk::schema::schema_utils::ClientMessage>>
+        {
+            Ok(None)
+        }
+        async fn send_batch(
+            &self,
+            _messages: Vec<rust_mcp_sdk::schema::schema_utils::ServerMessage>,
+            _request_timeout: Option<std::time::Duration>,
+        ) -> rust_mcp_sdk::error::SdkResult<
+            Option<Vec<rust_mcp_sdk::schema::schema_utils::ClientMessage>>,
+        > {
+            Ok(None)
+        }
+    }
+    #[test]
+    fn test_extract_from_value() {
+        let val = Some(json!({"testKey": "testValue", "numKey": 42}));
+        assert_eq!(extract_from_value(&val, "testKey"), Some("testValue"));
+        assert_eq!(extract_from_value(&val, "numKey"), None); // As string fails
+        assert_eq!(extract_from_value(&val, "missing"), None);
+        assert_eq!(extract_from_value(&None, "testKey"), None);
+    }
+
+    #[test]
+    fn test_find_line_column() {
+        let source = "function test() {\n  let a = 1;\n  console.log(a);\n}";
+
+        let (line, col) = find_line_column(source, "let a").unwrap();
+        assert_eq!(line, 1);
+        assert_eq!(col, 2);
+
+        let (line, col) = find_line_column(source, "console.log").unwrap();
+        assert_eq!(line, 2);
+        assert_eq!(col, 2);
+
+        let (line, col) = find_line_column(source, "function test").unwrap();
+        assert_eq!(line, 0);
+        assert_eq!(col, 0);
+
+        assert_eq!(find_line_column(source, "not_found"), None);
+    }
+
+    #[tokio::test]
+    async fn test_handle_list_tools_request() {
+        let handler = ChromeMcpHandler::new_test();
+        let mock_server = Arc::new(DummyMcpServer {});
+
+        let result = handler
+            .handle_list_tools_request(None, mock_server.clone())
+            .await;
+
+        assert!(result.is_ok());
+        let tools = result.unwrap().tools;
+
+        // Ensure all registered tools are present
+        assert_eq!(tools.len(), 13);
+        let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
+        assert!(tool_names.contains(&"evaluate_js".to_string()));
+        assert!(tool_names.contains(&"navigate".to_string()));
+        assert!(tool_names.contains(&"restart_chrome".to_string()));
+        assert!(tool_names.contains(&"stop_chrome".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_handle_call_tool_request_unknown_tool() {
+        let handler = ChromeMcpHandler::new_test();
+        let mock_server = Arc::new(DummyMcpServer {});
+
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "non_existent_tool_123",
+            "arguments": {}
+        }))
+        .unwrap();
+
+        let result = handler.handle_call_tool_request(params, mock_server).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Unknown tool: non_existent_tool_123")
+        );
+    }
+}

@@ -48,3 +48,78 @@ impl EvaluateJsTool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chrome_mcp_handler::cdp_domains::tests::spawn_mock_chrome_server;
+    use crate::chrome_mcp_handler::chrome_instance::MockChromeManager;
+    use rust_mcp_sdk::schema::CallToolRequestParams;
+    use serde_json::json;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn test_evaluate_js_params_deserialization() {
+        let params: Result<CallToolRequestParams, _> = serde_json::from_value(json!({
+            "name": "evaluate_js",
+            "arguments": {
+                "expression": "console.log('test')"
+            }
+        }));
+        assert!(params.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_js_tool_deserialization() {
+        let tool: Result<EvaluateJsTool, _> = serde_json::from_value(json!({
+            "expression": "2 + 2"
+        }));
+        assert!(tool.is_ok());
+        assert_eq!(tool.unwrap().expression, "2 + 2");
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_js_missing_expression_fails() {
+        let handler = ChromeMcpHandler::new_test();
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "evaluate_js",
+            "arguments": {}
+        }))
+        .unwrap();
+
+        let result = EvaluateJsTool::handle(params, &handler).await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("missing field `expression`")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_js_handle() {
+        let port = spawn_mock_chrome_server().await;
+
+        let mut handler = ChromeMcpHandler::new_test();
+        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "evaluate_js",
+            "arguments": {
+                "expression": "2 + 2"
+            }
+        }))
+        .unwrap();
+
+        let result = EvaluateJsTool::handle(params, &handler).await;
+        assert!(result.is_ok(), "Handle should succeed: {:?}", result.err());
+
+        let call_result = result.unwrap();
+        assert!(!call_result.content.is_empty());
+        let content_str = format!("{:?}", call_result.content);
+        // Checking if the basic success output format is returned
+        assert!(content_str.contains("WsResponse"));
+    }
+}

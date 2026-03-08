@@ -36,3 +36,52 @@ impl StopChromeTool {
         ]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chrome_mcp_handler::chrome_instance::MockChromeManager;
+    use rust_mcp_sdk::schema::CallToolRequestParams;
+    use serde_json::json;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn test_stop_chrome_params_deserialization() {
+        let params: Result<CallToolRequestParams, _> = serde_json::from_value(json!({
+            "name": "stop_chrome",
+            "arguments": {}
+        }));
+        assert!(params.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_stop_chrome_tool_deserialization() {
+        let tool: Result<StopChromeTool, _> = serde_json::from_value(json!({}));
+        assert!(tool.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_stop_chrome_handle() {
+        let mut handler = ChromeMcpHandler::new_test();
+        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(9999)));
+
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "stop_chrome",
+            "arguments": {}
+        }))
+        .unwrap();
+
+        let result = StopChromeTool::handle(params, &handler).await;
+        assert!(result.is_ok(), "Handle should succeed: {:?}", result.err());
+
+        let call_result = result.unwrap();
+        assert!(!call_result.content.is_empty());
+        let content_str = format!("{:?}", call_result.content);
+        assert!(
+            content_str.contains("Chrome instance stopped successfully"),
+            "Content didn't match: {}",
+            content_str
+        );
+    }
+}
