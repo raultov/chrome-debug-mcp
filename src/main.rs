@@ -3,7 +3,7 @@ mod chrome_mcp_handler;
 use chrome_mcp_handler::ChromeMcpHandler;
 use rust_mcp_sdk::{error::SdkResult, mcp_server::server_runtime, schema::*, *};
 
-// TODO for the version 0.3.0 we will add the ability to click on buttons, take screenshots, retrieve console logs, scroll, follow links,...
+// TODO for the version 0.3.0 we will add the ability to fetch network requests/responses, click on buttons, take screenshots, retrieve console logs, scroll, follow links,...
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {
