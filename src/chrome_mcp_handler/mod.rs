@@ -9,6 +9,7 @@ use cdp_domains::debugger::resume::ResumeTool;
 use cdp_domains::debugger::search_scripts::SearchScriptsTool;
 use cdp_domains::debugger::set_breakpoint::SetBreakpointTool;
 use cdp_domains::debugger::step_over::StepOverTool;
+use cdp_domains::network::get_network_logs::GetNetworkLogsTool;
 use cdp_domains::page::navigate::NavigateTool;
 use cdp_domains::page::reload::ReloadTool;
 use cdp_domains::runtime::evaluate_js::EvaluateJsTool;
@@ -36,9 +37,37 @@ pub(crate) struct DebuggerState {
     pub paused_call_frame_id: Option<String>,
 }
 
+#[derive(Clone, Debug, ::serde::Serialize, ::serde::Deserialize)]
+pub struct NetworkRequest {
+    pub url: String,
+    pub method: String,
+    pub resource_type: Option<String>,
+    pub request_headers: Option<serde_json::Value>,
+    pub request_post_data: Option<String>,
+    pub response_status: Option<i64>,
+    pub response_status_text: Option<String>,
+    pub response_headers: Option<serde_json::Value>,
+    pub response_body: Option<String>,
+}
+
+#[derive(Clone, Debug, ::serde::Serialize, ::serde::Deserialize)]
+pub struct WebSocketFrame {
+    pub url: String,
+    pub payload_data: String,
+    pub is_sent: bool,
+}
+
+#[derive(Default)]
+pub(crate) struct NetworkState {
+    pub requests: std::collections::HashMap<String, NetworkRequest>,
+    pub ws_connections: std::collections::HashMap<String, String>,
+    pub ws_frames: std::collections::HashMap<String, Vec<WebSocketFrame>>,
+}
+
 pub struct ChromeMcpHandler {
     pub(crate) client: Arc<Mutex<Option<CdpClient>>>,
     pub(crate) debugger_state: Arc<Mutex<DebuggerState>>,
+    pub(crate) network_state: Arc<Mutex<NetworkState>>,
     pub(crate) chrome_manager: Arc<Mutex<dyn chrome_instance::ChromeManager>>,
 }
 
@@ -47,6 +76,7 @@ impl ChromeMcpHandler {
         Self {
             client: Arc::new(Mutex::new(None)),
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
+            network_state: Arc::new(Mutex::new(NetworkState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::ChromeInstanceManager::new(
                 port,
             ))),
@@ -58,6 +88,7 @@ impl ChromeMcpHandler {
         Self {
             client: Arc::new(Mutex::new(None)),
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
+            network_state: Arc::new(Mutex::new(NetworkState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::MockChromeManager::new(9999))),
         }
     }
@@ -116,10 +147,18 @@ impl ChromeMcpHandler {
                     let _ = client
                         .send_raw_command("Page.enable", cdp_lite::protocol::NoParams)
                         .await;
+                    let _ = client
+                        .send_raw_command("Network.enable", cdp_lite::protocol::NoParams)
+                        .await;
 
                     cdp_domains::debugger::start_debugger_listener(
                         &mut client,
                         self.debugger_state.clone(),
+                    );
+
+                    cdp_domains::network::start_network_listener(
+                        &mut client,
+                        self.network_state.clone(),
                     );
 
                     let _ = client
@@ -162,6 +201,7 @@ impl ServerHandler for ChromeMcpHandler {
                 RemoveBreakpointTool::tool(),
                 RestartChromeTool::tool(),
                 StopChromeTool::tool(),
+                GetNetworkLogsTool::tool(),
             ],
             meta: None,
             next_cursor: None,
@@ -199,6 +239,8 @@ impl ServerHandler for ChromeMcpHandler {
             RestartChromeTool::handle(params, self).await
         } else if params.name == "stop_chrome" {
             StopChromeTool::handle(params, self).await
+        } else if params.name == "get_network_logs" {
+            GetNetworkLogsTool::handle(params, self).await
         } else {
             Err(CallToolError::unknown_tool(params.name))
         }
@@ -311,7 +353,7 @@ mod tests {
         let tools = result.unwrap().tools;
 
         // Ensure all registered tools are present
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 14);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"evaluate_js".to_string()));
         assert!(tool_names.contains(&"navigate".to_string()));

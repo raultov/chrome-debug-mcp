@@ -1,8 +1,8 @@
 [package]
 name = "chrome-debug-mcp"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2024"
-authors = ["raultov <raul@example.com>"]
+authors = ["raultov <raultov@protonmail.com>"]
 homepage = "https://github.com/raultov/chrome-debug-mcp"
 repository = "https://github.com/raultov/chrome-debug-mcp"
 description = "Rust MCP Server for full Chrome CDP control and interactive JS debugging"

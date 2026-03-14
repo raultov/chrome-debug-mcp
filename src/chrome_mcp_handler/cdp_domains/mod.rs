@@ -1,10 +1,13 @@
 pub mod debugger;
+pub mod network;
 pub mod page;
 pub mod runtime;
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use cdp_lite::client::CdpClient;
     use serde_json::json;
+    use std::time::Duration;
 
     pub(crate) async fn spawn_mock_chrome_server() -> u16 {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -45,9 +48,24 @@ pub(crate) mod tests {
                         && let Some(id) = req.get("id").and_then(|i| i.as_i64())
                     {
                         // Reply with success
+                        let mut result = json!({});
+                        if let Some(method) = req.get("method").and_then(|m| m.as_str())
+                            && method == "Runtime.evaluate"
+                            && let Some(params) = req.get("params")
+                            && let Some(expr) = params.get("expression").and_then(|e| e.as_str())
+                            && expr == "document.documentElement.outerHTML"
+                        {
+                            result = json!({
+                                "result": {
+                                    "type": "string",
+                                    "value": "<html><body><h1>Hello World</h1><div id='test'>This is a test</div></body></html>"
+                                }
+                            });
+                        }
+
                         let reply = json!({
                             "id": id,
-                            "result": {}
+                            "result": result
                         });
                         let _ = ws_stream
                             .send(tokio_tungstenite::tungstenite::Message::Text(
@@ -60,5 +78,39 @@ pub(crate) mod tests {
         });
 
         port
+    }
+
+    #[tokio::test]
+    async fn test_mock_chrome_server_connection() {
+        let port = spawn_mock_chrome_server().await;
+        let addr = format!("127.0.0.1:{}", port);
+
+        let client_res = CdpClient::new(&addr, Duration::from_secs(2)).await;
+        assert!(
+            client_res.is_ok(),
+            "Failed to connect to mock server: {:?}",
+            client_res.err()
+        );
+
+        let client = client_res.unwrap();
+        let res = client.send_raw_command("Runtime.enable", json!({})).await;
+        assert!(res.is_ok(), "Failed to send command: {:?}", res.err());
+    }
+
+    #[tokio::test]
+    async fn test_mock_chrome_server_multiple_commands() {
+        let port = spawn_mock_chrome_server().await;
+        let addr = format!("127.0.0.1:{}", port);
+
+        let client = CdpClient::new(&addr, Duration::from_secs(2))
+            .await
+            .expect("Failed to connect");
+
+        for i in 0..5 {
+            let res = client
+                .send_raw_command("Runtime.evaluate", json!({"expression": format!("{}", i)}))
+                .await;
+            assert!(res.is_ok(), "Command {} failed: {:?}", i, res.err());
+        }
     }
 }

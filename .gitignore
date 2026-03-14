@@ -3,3 +3,4 @@ out.json
 out.err
 logs/
 *.html
+*.sh

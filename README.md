@@ -13,7 +13,7 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.2.4)
+## ✨ Features (v0.3.0)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
@@ -23,10 +23,18 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * `stop_chrome`: Shuts down the managed Chrome instance gracefully (SIGTERM/SIGINT with fallback to SIGKILL).
 * **Robust Lifecycle**: Fixed issues with dangling Chrome processes and patched preferences for cleaner restarts.
 
+**📡 Network Inspection (v0.3.0)**
+* `get_network_logs`: Retrieve intercepted network requests (REST/HTTP) and WebSocket frames.
+* **Advanced Filtering**: Filter logs by URL, resource type, WebSocket direction, or payload content.
+* **Payload Inspection**: Access full request/response headers, REST response bodies, and WebSocket frames.
+* **Context Optimized**: Optional "summary mode" to avoid flooding the LLM context window.
+
 **🌐 Page & Runtime Control**
 * `navigate`: Navigate the active tab to a specific URL.
 * `reload`: Reload the current page.
-* `inspect_dom`: Extract the entire HTML payload of the current document.
+* `inspect_dom`: Fetch the entire HTML or a smart snippet around a search query.
+  * **Context Search**: Search for specific text and get a configurable number of characters around it.
+  * **Token Efficiency**: Drastically reduce context window usage for large pages.
 * `evaluate_js`: Run an arbitrary JavaScript expression globally on the page context.
 
 **🐞 Live Debugging & Execution Control**
