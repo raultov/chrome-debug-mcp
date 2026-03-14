@@ -1,4 +1,7 @@
-Cuando programemos en rust, asegurate de hacer un cargo fmt y un cargo clippy para arreglar los problemas de lint y format. Usamos edition = "2024" por tanto tenlo en cuenta para el clippy.
-Cuando programemos algo en rust, salvo que se diga lo contrario el binario generado (libreria o ejecutable) tiene que ser compatibles para Linux, Mac y Windows.
-No publiques a github o a crates.io sin pedir permiso antes. Tienes que pedir permiso antes.
-Cuando se haga una modificacion o se anadan nuevas features, actualiza el README.md para reflejarlo.
+When programming in Rust, make sure to run `cargo fmt` and `cargo clippy` to fix lint and format issues. We use `edition = "2024"`, so keep that in mind for clippy.
+
+Unless otherwise stated, all Rust binaries (libraries or executables) must be compatible with Linux, macOS, and Windows.
+
+Do not push to `master` or `main` branches on GitHub or publish to `crates.io` without asking for permission first. You must obtain explicit permission beforehand.
+
+Whenever a modification is made or new features are added, update `README.md` to reflect them.

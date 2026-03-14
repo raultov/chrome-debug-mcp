@@ -1,6 +1,6 @@
 [package]
 name = "chrome-debug-mcp"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 authors = ["raultov <raultov@protonmail.com>"]
 homepage = "https://github.com/raultov/chrome-debug-mcp"

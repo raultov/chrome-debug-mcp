@@ -72,6 +72,13 @@ pub(crate) mod tests {
                                         }
                                     }
                                 });
+                            } else if expr.contains("focus()") {
+                                result = json!({
+                                    "result": {
+                                        "type": "boolean",
+                                        "value": true
+                                    }
+                                });
                             }
                         }
 
