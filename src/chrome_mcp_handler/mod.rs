@@ -15,6 +15,7 @@ use cdp_domains::network::get_network_logs::GetNetworkLogsTool;
 use cdp_domains::page::capture_screenshot::CaptureScreenshotTool;
 use cdp_domains::page::navigate::NavigateTool;
 use cdp_domains::page::reload::ReloadTool;
+use cdp_domains::page::scroll::ScrollTool;
 use cdp_domains::runtime::evaluate_js::EvaluateJsTool;
 use cdp_domains::runtime::inspect_dom::InspectDomTool;
 use chrome_instance::restart_chrome::RestartChromeTool;
@@ -204,6 +205,7 @@ impl ServerHandler for ChromeMcpHandler {
                 SetBreakpointTool::tool(),
                 EvaluateOnCallFrameTool::tool(),
                 ReloadTool::tool(),
+                ScrollTool::tool(),
                 RemoveBreakpointTool::tool(),
                 RestartChromeTool::tool(),
                 StopChromeTool::tool(),
@@ -247,6 +249,8 @@ impl ServerHandler for ChromeMcpHandler {
             RemoveBreakpointTool::handle(params, self).await
         } else if params.name == "reload" {
             ReloadTool::handle(params, self).await
+        } else if params.name == "scroll" {
+            ScrollTool::handle(params, self).await
         } else if params.name == "restart_chrome" {
             RestartChromeTool::handle(params, self).await
         } else if params.name == "stop_chrome" {
@@ -365,8 +369,9 @@ mod tests {
         let tools = result.unwrap().tools;
 
         // Ensure all registered tools are present
-        assert_eq!(tools.len(), 17);
+        assert_eq!(tools.len(), 18);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
+        assert!(tool_names.contains(&"scroll".to_string()));
         assert!(tool_names.contains(&"capture_screenshot".to_string()));
         assert!(tool_names.contains(&"click_element".to_string()));
         assert!(tool_names.contains(&"fill_input".to_string()));
