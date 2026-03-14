@@ -11,6 +11,8 @@ pub trait ChromeManager: Send + Sync {
     async fn ensure_instance(&mut self) -> anyhow::Result<()>;
     fn stop_instance(&mut self) -> anyhow::Result<()>;
     fn get_port(&self) -> u16;
+    #[allow(dead_code)]
+    fn set_port(&mut self, port: u16);
 }
 
 pub struct ChromeInstanceManager {
@@ -31,6 +33,10 @@ impl ChromeManager for ChromeInstanceManager {
 
     fn get_port(&self) -> u16 {
         self.port
+    }
+
+    fn set_port(&mut self, port: u16) {
+        self.port = port;
     }
 }
 
@@ -189,5 +195,9 @@ impl ChromeManager for MockChromeManager {
 
     fn get_port(&self) -> u16 {
         self.port
+    }
+
+    fn set_port(&mut self, port: u16) {
+        self.port = port;
     }
 }

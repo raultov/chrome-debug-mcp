@@ -13,7 +13,7 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.6.0)
+## ✨ Features (v0.7.0)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
@@ -36,6 +36,9 @@ This server natively implements a suite of tools categorized by CDP domains and 
 
 **🪵 Console & Errors (v0.6.0)**
 * `get_console_logs`: Retrieve console logs from the browser. This includes console.log/warn/error calls, exceptions, and network errors. Crucial for troubleshooting page scripts and errors. Includes optional log level filtering and a `clear` flag to manage state efficiently.
+
+**⚡ Performance (v0.7.0)**
+* `get_performance_metrics`: Retrieve run-time performance metrics from the browser (e.g., JS heap size, DOM nodes, layout duration). Useful for getting a quick snapshot of the page's memory and computational overhead.
 
 **🌐 Page & Runtime Control**
 * `capture_screenshot`: Take a screenshot of the current page (or full page layout) and return it to the LLM client as a base64 encoded image block.

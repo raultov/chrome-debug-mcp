@@ -17,6 +17,7 @@ use cdp_domains::page::capture_screenshot::CaptureScreenshotTool;
 use cdp_domains::page::navigate::NavigateTool;
 use cdp_domains::page::reload::ReloadTool;
 use cdp_domains::page::scroll::ScrollTool;
+use cdp_domains::performance::get_performance_metrics::GetPerformanceMetricsTool;
 use cdp_domains::runtime::evaluate_js::EvaluateJsTool;
 use cdp_domains::runtime::inspect_dom::InspectDomTool;
 use chrome_instance::restart_chrome::RestartChromeTool;
@@ -161,6 +162,9 @@ impl ChromeMcpHandler {
                     let _ = client
                         .send_raw_command("Log.enable", cdp_lite::protocol::NoParams)
                         .await;
+                    let _ = client
+                        .send_raw_command("Performance.enable", cdp_lite::protocol::NoParams)
+                        .await;
 
                     cdp_domains::debugger::start_debugger_listener(
                         &mut client,
@@ -220,6 +224,7 @@ impl ServerHandler for ChromeMcpHandler {
                 StopChromeTool::tool(),
                 GetNetworkLogsTool::tool(),
                 GetConsoleLogsTool::tool(),
+                GetPerformanceMetricsTool::tool(),
             ],
             meta: None,
             next_cursor: None,
@@ -269,6 +274,8 @@ impl ServerHandler for ChromeMcpHandler {
             GetNetworkLogsTool::handle(params, self).await
         } else if params.name == "get_console_logs" {
             GetConsoleLogsTool::handle(params, self).await
+        } else if params.name == "get_performance_metrics" {
+            GetPerformanceMetricsTool::handle(params, self).await
         } else {
             Err(CallToolError::unknown_tool(params.name))
         }
@@ -381,7 +388,7 @@ mod tests {
         let tools = result.unwrap().tools;
 
         // Ensure all registered tools are present
-        assert_eq!(tools.len(), 19);
+        assert_eq!(tools.len(), 20);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"scroll".to_string()));
         assert!(tool_names.contains(&"capture_screenshot".to_string()));
@@ -392,6 +399,7 @@ mod tests {
         assert!(tool_names.contains(&"restart_chrome".to_string()));
         assert!(tool_names.contains(&"stop_chrome".to_string()));
         assert!(tool_names.contains(&"get_console_logs".to_string()));
+        assert!(tool_names.contains(&"get_performance_metrics".to_string()));
     }
 
     #[tokio::test]

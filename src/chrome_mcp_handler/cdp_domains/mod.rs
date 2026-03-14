@@ -150,3 +150,4 @@ pub(crate) mod tests {
     }
 }
 pub mod log;
+pub mod performance;
