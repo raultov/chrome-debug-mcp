@@ -3,7 +3,9 @@ mod chrome_mcp_handler;
 use chrome_mcp_handler::ChromeMcpHandler;
 use rust_mcp_sdk::{error::SdkResult, mcp_server::server_runtime, schema::*, *};
 
-// TODO for the version 0.4.0 we will add the ability to click on buttons and fill forms, take screenshots, retrieve console logs, scroll, follow links,...
+// TODO for the version 0.5.0 we will add the ability to take screenshots and scroll, retrieve console logs,...
+// TODO for version 1.0 the mcp will be able to run inside a docker container starting up a headless chrome inside the container, and optionally it will be able to manage a browser in the host if it started with debugging enabled.
+// TODO render a sourrounding frame in the browser view when running any tool.
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {

@@ -1,6 +1,6 @@
 [package]
 name = "chrome-debug-mcp"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2024"
 authors = ["raultov <raultov@protonmail.com>"]
 homepage = "https://github.com/raultov/chrome-debug-mcp"
@@ -20,6 +20,7 @@ eula = false
 [dependencies]
 anyhow = "1.0.102"
 async-trait = "0.1.89"
+base64 = "0.22.1"
 cdp-lite = "0.1.1"
 rust-mcp-sdk = "0.8.3"
 schemars = "0.8"

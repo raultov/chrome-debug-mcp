@@ -13,7 +13,7 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.4.1)
+## ✨ Features (v0.5.0)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
@@ -34,6 +34,7 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * **Context Optimized**: Optional "summary mode" to avoid flooding the LLM context window.
 
 **🌐 Page & Runtime Control**
+* `capture_screenshot`: Take a screenshot of the current page (or full page layout) and return it to the LLM client as a base64 encoded image block.
 * `navigate`: Navigate the active tab to a specific URL.
 * `reload`: Reload the current page.
 * `inspect_dom`: Fetch the entire HTML or a smart snippet around a search query.

@@ -50,33 +50,49 @@ pub(crate) mod tests {
                     {
                         // Reply with success
                         let mut result = json!({});
-                        if let Some(method) = req.get("method").and_then(|m| m.as_str())
-                            && method == "Runtime.evaluate"
-                            && let Some(params) = req.get("params")
-                            && let Some(expr) = params.get("expression").and_then(|e| e.as_str())
-                        {
-                            if expr == "document.documentElement.outerHTML" {
-                                result = json!({
-                                    "result": {
-                                        "type": "string",
-                                        "value": "<html><body><h1>Hello World</h1><div id='test'>This is a test</div></body></html>"
+                        if let Some(method) = req.get("method").and_then(|m| m.as_str()) {
+                            if method == "Runtime.evaluate" {
+                                if let Some(params) = req.get("params")
+                                    && let Some(expr) =
+                                        params.get("expression").and_then(|e| e.as_str())
+                                {
+                                    if expr == "document.documentElement.outerHTML" {
+                                        result = json!({
+                                            "result": {
+                                                "type": "string",
+                                                "value": "<html><body><h1>Hello World</h1><div id='test'>This is a test</div></body></html>"
+                                            }
+                                        });
+                                    } else if expr.contains("getBoundingClientRect") {
+                                        result = json!({
+                                            "result": {
+                                                "type": "object",
+                                                "value": {
+                                                    "x": 100.5,
+                                                    "y": 200.5
+                                                }
+                                            }
+                                        });
+                                    } else if expr.contains("focus()") {
+                                        result = json!({
+                                            "result": {
+                                                "type": "boolean",
+                                                "value": true
+                                            }
+                                        });
                                     }
-                                });
-                            } else if expr.contains("getBoundingClientRect") {
+                                }
+                            } else if method == "Page.captureScreenshot" {
                                 result = json!({
-                                    "result": {
-                                        "type": "object",
-                                        "value": {
-                                            "x": 100.5,
-                                            "y": 200.5
-                                        }
-                                    }
+                                    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
                                 });
-                            } else if expr.contains("focus()") {
+                            } else if method == "Page.getLayoutMetrics" {
                                 result = json!({
-                                    "result": {
-                                        "type": "boolean",
-                                        "value": true
+                                    "contentSize": {
+                                        "x": 0,
+                                        "y": 0,
+                                        "width": 1920,
+                                        "height": 1080
                                     }
                                 });
                             }
