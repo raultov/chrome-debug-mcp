@@ -11,6 +11,10 @@
 
 Using `cdp-lite` underneath, this MCP server directly hooks into the browser avoiding heavy abstractions, enabling live-debugging sessions directly from your editor or chat-interface. Starting from v0.2.0, it can also manage the Chrome process lifecycle automatically.
 
+<a href="https://glama.ai/mcp/servers/raultov/chrome-debug-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/raultov/chrome-debug-mcp/badge" alt="chrome-debug-mcp MCP server" />
+</a>
+
 ---
 
 ## ✨ Features (v0.3.3)
