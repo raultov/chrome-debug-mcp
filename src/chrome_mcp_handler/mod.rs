@@ -9,6 +9,7 @@ use cdp_domains::debugger::resume::ResumeTool;
 use cdp_domains::debugger::search_scripts::SearchScriptsTool;
 use cdp_domains::debugger::set_breakpoint::SetBreakpointTool;
 use cdp_domains::debugger::step_over::StepOverTool;
+use cdp_domains::input::click_element::ClickElementTool;
 use cdp_domains::network::get_network_logs::GetNetworkLogsTool;
 use cdp_domains::page::navigate::NavigateTool;
 use cdp_domains::page::reload::ReloadTool;
@@ -188,6 +189,7 @@ impl ServerHandler for ChromeMcpHandler {
     ) -> std::result::Result<ListToolsResult, RpcError> {
         Ok(ListToolsResult {
             tools: vec![
+                ClickElementTool::tool(),
                 EvaluateJsTool::tool(),
                 NavigateTool::tool(),
                 InspectDomTool::tool(),
@@ -213,7 +215,9 @@ impl ServerHandler for ChromeMcpHandler {
         params: CallToolRequestParams,
         _runtime: std::sync::Arc<dyn McpServer>,
     ) -> std::result::Result<CallToolResult, CallToolError> {
-        if params.name == "evaluate_js" {
+        if params.name == "click_element" {
+            ClickElementTool::handle(params, self).await
+        } else if params.name == "evaluate_js" {
             EvaluateJsTool::handle(params, self).await
         } else if params.name == "navigate" {
             NavigateTool::handle(params, self).await
@@ -353,8 +357,9 @@ mod tests {
         let tools = result.unwrap().tools;
 
         // Ensure all registered tools are present
-        assert_eq!(tools.len(), 14);
+        assert_eq!(tools.len(), 15);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
+        assert!(tool_names.contains(&"click_element".to_string()));
         assert!(tool_names.contains(&"evaluate_js".to_string()));
         assert!(tool_names.contains(&"navigate".to_string()));
         assert!(tool_names.contains(&"restart_chrome".to_string()));

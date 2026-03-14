@@ -1,4 +1,5 @@
 pub mod debugger;
+pub mod input;
 pub mod network;
 pub mod page;
 pub mod runtime;
@@ -53,14 +54,25 @@ pub(crate) mod tests {
                             && method == "Runtime.evaluate"
                             && let Some(params) = req.get("params")
                             && let Some(expr) = params.get("expression").and_then(|e| e.as_str())
-                            && expr == "document.documentElement.outerHTML"
                         {
-                            result = json!({
-                                "result": {
-                                    "type": "string",
-                                    "value": "<html><body><h1>Hello World</h1><div id='test'>This is a test</div></body></html>"
-                                }
-                            });
+                            if expr == "document.documentElement.outerHTML" {
+                                result = json!({
+                                    "result": {
+                                        "type": "string",
+                                        "value": "<html><body><h1>Hello World</h1><div id='test'>This is a test</div></body></html>"
+                                    }
+                                });
+                            } else if expr.contains("getBoundingClientRect") {
+                                result = json!({
+                                    "result": {
+                                        "type": "object",
+                                        "value": {
+                                            "x": 100.5,
+                                            "y": 200.5
+                                        }
+                                    }
+                                });
+                            }
                         }
 
                         let reply = json!({

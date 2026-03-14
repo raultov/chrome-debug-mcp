@@ -13,7 +13,7 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.3.4)
+## ✨ Features (v0.4.0)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
@@ -22,6 +22,9 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * `restart_chrome`: Restarts the managed Chrome instance.
 * `stop_chrome`: Shuts down the managed Chrome instance gracefully (SIGTERM/SIGINT with fallback to SIGKILL).
 * **Robust Lifecycle**: Fixed issues with dangling Chrome processes and patched preferences for cleaner restarts.
+
+**🖱️ User Input (v0.4.0)**
+* `click_element`: Simulates a native mouse click on a specific element by using a CSS selector. It calculates the center coordinates of the element and dispatches CDP mouse events directly.
 
 **📡 Network Inspection (v0.3.0)**
 * `get_network_logs`: Retrieve intercepted network requests (REST/HTTP) and WebSocket frames.
