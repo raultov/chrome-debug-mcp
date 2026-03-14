@@ -13,7 +13,7 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.3.0)
+## ✨ Features (v0.3.1)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
