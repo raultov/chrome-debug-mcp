@@ -20,6 +20,7 @@ use cdp_domains::page::scroll::ScrollTool;
 use cdp_domains::performance::get_performance_metrics::GetPerformanceMetricsTool;
 use cdp_domains::runtime::evaluate_js::EvaluateJsTool;
 use cdp_domains::runtime::inspect_dom::InspectDomTool;
+use cdp_domains::tracing::profile_page_performance::ProfilePagePerformanceTool;
 use chrome_instance::restart_chrome::RestartChromeTool;
 use chrome_instance::stop_chrome::StopChromeTool;
 
@@ -75,6 +76,7 @@ pub struct ChromeMcpHandler {
     pub(crate) debugger_state: Arc<Mutex<DebuggerState>>,
     pub(crate) network_state: Arc<Mutex<NetworkState>>,
     pub(crate) log_state: Arc<Mutex<cdp_domains::log::LogState>>,
+    pub(crate) tracing_state: Arc<Mutex<cdp_domains::tracing::TracingState>>,
     pub(crate) chrome_manager: Arc<Mutex<dyn chrome_instance::ChromeManager>>,
 }
 
@@ -85,6 +87,7 @@ impl ChromeMcpHandler {
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
             network_state: Arc::new(Mutex::new(NetworkState::default())),
             log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
+            tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::ChromeInstanceManager::new(
                 port,
             ))),
@@ -98,6 +101,7 @@ impl ChromeMcpHandler {
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
             network_state: Arc::new(Mutex::new(NetworkState::default())),
             log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
+            tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::MockChromeManager::new(9999))),
         }
     }
@@ -177,6 +181,10 @@ impl ChromeMcpHandler {
                     );
 
                     cdp_domains::log::start_log_listener(&mut client, self.log_state.clone());
+                    cdp_domains::tracing::start_tracing_listener(
+                        &mut client,
+                        self.tracing_state.clone(),
+                    );
 
                     let _ = client
                         .send_raw_command("Debugger.enable", cdp_lite::protocol::NoParams)
@@ -225,6 +233,7 @@ impl ServerHandler for ChromeMcpHandler {
                 GetNetworkLogsTool::tool(),
                 GetConsoleLogsTool::tool(),
                 GetPerformanceMetricsTool::tool(),
+                ProfilePagePerformanceTool::tool(),
             ],
             meta: None,
             next_cursor: None,
@@ -276,6 +285,8 @@ impl ServerHandler for ChromeMcpHandler {
             GetConsoleLogsTool::handle(params, self).await
         } else if params.name == "get_performance_metrics" {
             GetPerformanceMetricsTool::handle(params, self).await
+        } else if params.name == "profile_page_performance" {
+            ProfilePagePerformanceTool::handle(params, self).await
         } else {
             Err(CallToolError::unknown_tool(params.name))
         }
@@ -388,7 +399,7 @@ mod tests {
         let tools = result.unwrap().tools;
 
         // Ensure all registered tools are present
-        assert_eq!(tools.len(), 20);
+        assert_eq!(tools.len(), 21);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"scroll".to_string()));
         assert!(tool_names.contains(&"capture_screenshot".to_string()));
@@ -400,6 +411,7 @@ mod tests {
         assert!(tool_names.contains(&"stop_chrome".to_string()));
         assert!(tool_names.contains(&"get_console_logs".to_string()));
         assert!(tool_names.contains(&"get_performance_metrics".to_string()));
+        assert!(tool_names.contains(&"profile_page_performance".to_string()));
     }
 
     #[tokio::test]
