@@ -290,4 +290,36 @@ mod tests {
         assert_eq!(tool.action, Some("reload".to_string()));
         assert_eq!(tool.disable_cache, Some(true));
     }
+
+    #[test]
+    fn test_analyze_trace() {
+        let trace_data = json!({
+            "traceEvents": [
+                { "name": "navigationStart", "ph": "R", "ts": 1000000 },
+                { "name": "firstContentfulPaint", "ph": "R", "ts": 1200000 },
+                { "name": "largestContentfulPaint::Candidate", "ph": "R", "ts": 1500000 },
+                { "name": "domContentLoadedEventEnd", "ph": "R", "ts": 1800000 },
+                { "name": "loadEventEnd", "ph": "R", "ts": 2000000 },
+                // Long task (RunTask) - 100ms duration (dur is in micros)
+                { "name": "RunTask", "ph": "X", "ts": 1300000, "dur": 100000, "args": { "src": "test.js" } },
+                // Short task (ignored)
+                { "name": "RunTask", "ph": "X", "ts": 1450000, "dur": 10000 },
+                // Another long task (EvaluateScript) - 200ms
+                { "name": "EvaluateScript", "ph": "X", "ts": 1600000, "dur": 200000 }
+            ]
+        });
+
+        let summary = ProfilePagePerformanceTool::analyze_trace(&trace_data.to_string(), 3000);
+
+        assert_eq!(summary.first_contentful_paint_ms, Some(200.0)); // (1.2s - 1.0s) = 200ms
+        assert_eq!(summary.largest_contentful_paint_ms, Some(500.0));
+        assert_eq!(summary.dom_content_loaded_ms, Some(800.0));
+        assert_eq!(summary.load_event_ms, Some(1000.0));
+
+        // TBT: (100-50) + (200-50) = 50 + 150 = 200ms
+        assert_eq!(summary.total_blocking_time_ms, 200.0);
+        assert_eq!(summary.top_long_tasks.len(), 2);
+        assert_eq!(summary.top_long_tasks[0].duration_ms, 200.0);
+        assert_eq!(summary.top_long_tasks[1].duration_ms, 100.0);
+    }
 }
