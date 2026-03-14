@@ -11,6 +11,7 @@ use cdp_domains::debugger::set_breakpoint::SetBreakpointTool;
 use cdp_domains::debugger::step_over::StepOverTool;
 use cdp_domains::input::click_element::ClickElementTool;
 use cdp_domains::input::fill_input::FillInputTool;
+use cdp_domains::log::get_console_logs::GetConsoleLogsTool;
 use cdp_domains::network::get_network_logs::GetNetworkLogsTool;
 use cdp_domains::page::capture_screenshot::CaptureScreenshotTool;
 use cdp_domains::page::navigate::NavigateTool;
@@ -72,6 +73,7 @@ pub struct ChromeMcpHandler {
     pub(crate) client: Arc<Mutex<Option<CdpClient>>>,
     pub(crate) debugger_state: Arc<Mutex<DebuggerState>>,
     pub(crate) network_state: Arc<Mutex<NetworkState>>,
+    pub(crate) log_state: Arc<Mutex<cdp_domains::log::LogState>>,
     pub(crate) chrome_manager: Arc<Mutex<dyn chrome_instance::ChromeManager>>,
 }
 
@@ -81,6 +83,7 @@ impl ChromeMcpHandler {
             client: Arc::new(Mutex::new(None)),
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
             network_state: Arc::new(Mutex::new(NetworkState::default())),
+            log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::ChromeInstanceManager::new(
                 port,
             ))),
@@ -93,6 +96,7 @@ impl ChromeMcpHandler {
             client: Arc::new(Mutex::new(None)),
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
             network_state: Arc::new(Mutex::new(NetworkState::default())),
+            log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::MockChromeManager::new(9999))),
         }
     }
@@ -154,6 +158,9 @@ impl ChromeMcpHandler {
                     let _ = client
                         .send_raw_command("Network.enable", cdp_lite::protocol::NoParams)
                         .await;
+                    let _ = client
+                        .send_raw_command("Log.enable", cdp_lite::protocol::NoParams)
+                        .await;
 
                     cdp_domains::debugger::start_debugger_listener(
                         &mut client,
@@ -164,6 +171,8 @@ impl ChromeMcpHandler {
                         &mut client,
                         self.network_state.clone(),
                     );
+
+                    cdp_domains::log::start_log_listener(&mut client, self.log_state.clone());
 
                     let _ = client
                         .send_raw_command("Debugger.enable", cdp_lite::protocol::NoParams)
@@ -210,6 +219,7 @@ impl ServerHandler for ChromeMcpHandler {
                 RestartChromeTool::tool(),
                 StopChromeTool::tool(),
                 GetNetworkLogsTool::tool(),
+                GetConsoleLogsTool::tool(),
             ],
             meta: None,
             next_cursor: None,
@@ -257,6 +267,8 @@ impl ServerHandler for ChromeMcpHandler {
             StopChromeTool::handle(params, self).await
         } else if params.name == "get_network_logs" {
             GetNetworkLogsTool::handle(params, self).await
+        } else if params.name == "get_console_logs" {
+            GetConsoleLogsTool::handle(params, self).await
         } else {
             Err(CallToolError::unknown_tool(params.name))
         }
@@ -369,7 +381,7 @@ mod tests {
         let tools = result.unwrap().tools;
 
         // Ensure all registered tools are present
-        assert_eq!(tools.len(), 18);
+        assert_eq!(tools.len(), 19);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"scroll".to_string()));
         assert!(tool_names.contains(&"capture_screenshot".to_string()));
@@ -379,6 +391,7 @@ mod tests {
         assert!(tool_names.contains(&"navigate".to_string()));
         assert!(tool_names.contains(&"restart_chrome".to_string()));
         assert!(tool_names.contains(&"stop_chrome".to_string()));
+        assert!(tool_names.contains(&"get_console_logs".to_string()));
     }
 
     #[tokio::test]
