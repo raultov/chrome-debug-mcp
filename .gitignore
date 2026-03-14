@@ -6,3 +6,4 @@ logs/
 *.sh
 GEMINI.md
 *.png
+src/bin/
