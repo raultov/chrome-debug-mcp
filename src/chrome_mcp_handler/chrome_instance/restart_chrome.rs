@@ -9,13 +9,21 @@ use rust_mcp_sdk::{
     description = "Restarts the managed Chrome instance with remote debugging enabled. This tool can be used to start a new instance or restart an already existing one."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
-pub struct RestartChromeTool {}
+pub struct RestartChromeTool {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxy_server: Option<String>,
+}
 
 impl RestartChromeTool {
     pub async fn handle(
-        _params: CallToolRequestParams,
+        params: CallToolRequestParams,
         handler: &ChromeMcpHandler,
     ) -> Result<CallToolResult, CallToolError> {
+        let tool: RestartChromeTool = serde_json::from_value(serde_json::Value::Object(
+            params.arguments.unwrap_or_default(),
+        ))
+        .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
+
         let mut manager = handler.chrome_manager.lock().await;
 
         // Reset the client connection before stopping/starting
@@ -30,6 +38,8 @@ impl RestartChromeTool {
                 e
             )));
         }
+
+        manager.set_proxy(tool.proxy_server);
 
         if let Err(e) = manager.ensure_instance().await {
             return Err(CallToolError::from_message(format!(

@@ -9,6 +9,7 @@ use cdp_domains::debugger::resume::ResumeTool;
 use cdp_domains::debugger::search_scripts::SearchScriptsTool;
 use cdp_domains::debugger::set_breakpoint::SetBreakpointTool;
 use cdp_domains::debugger::step_over::StepOverTool;
+use cdp_domains::fetch::enable_proxy_auth::EnableProxyAuthTool;
 use cdp_domains::input::click_element::ClickElementTool;
 use cdp_domains::input::fill_input::FillInputTool;
 use cdp_domains::log::get_console_logs::GetConsoleLogsTool;
@@ -234,6 +235,7 @@ impl ServerHandler for ChromeMcpHandler {
                 GetConsoleLogsTool::tool(),
                 GetPerformanceMetricsTool::tool(),
                 ProfilePagePerformanceTool::tool(),
+                EnableProxyAuthTool::tool(),
             ],
             meta: None,
             next_cursor: None,
@@ -287,6 +289,8 @@ impl ServerHandler for ChromeMcpHandler {
             GetPerformanceMetricsTool::handle(params, self).await
         } else if params.name == "profile_page_performance" {
             ProfilePagePerformanceTool::handle(params, self).await
+        } else if params.name == "enable_proxy_auth" {
+            EnableProxyAuthTool::handle(params, self).await
         } else {
             Err(CallToolError::unknown_tool(params.name))
         }
@@ -399,7 +403,7 @@ mod tests {
         let tools = result.unwrap().tools;
 
         // Ensure all registered tools are present
-        assert_eq!(tools.len(), 21);
+        assert_eq!(tools.len(), 22);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"scroll".to_string()));
         assert!(tool_names.contains(&"capture_screenshot".to_string()));
@@ -412,6 +416,7 @@ mod tests {
         assert!(tool_names.contains(&"get_console_logs".to_string()));
         assert!(tool_names.contains(&"get_performance_metrics".to_string()));
         assert!(tool_names.contains(&"profile_page_performance".to_string()));
+        assert!(tool_names.contains(&"enable_proxy_auth".to_string()));
     }
 
     #[tokio::test]

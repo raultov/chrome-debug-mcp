@@ -3,8 +3,8 @@ mod chrome_mcp_handler;
 use chrome_mcp_handler::ChromeMcpHandler;
 use rust_mcp_sdk::{error::SdkResult, mcp_server::server_runtime, schema::*, *};
 
-// TODO for the version 0.8.0 we will add a new experimental command to allow the LLM (client) to send raw CDP commands to cover those domains and commands still not implemented.
-// TODO for the version 0.9.0 we will add the ability to start the browser with proxy enabled and then authenticate if needed upon first navigation.
+// TODO for the version 0.8.0 we will add the ability to start the browser with proxy enabled and then authenticate if needed upon first navigation.
+// TODO for the version 0.9.0 we will add a new experimental command to allow the LLM (client) to send raw CDP commands to cover those domains and commands still not implemented.
 // TODO for version 1.0 the mcp will be able to run inside a docker container starting up a headless chrome inside the container, and optionally it will be able to manage a host machine browser if it started with debugging enabled.
 // TODO render a sourrounding frame in the browser view when running any tool.
 

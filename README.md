@@ -13,15 +13,21 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.7.1)
+## ✨ Features (v0.8.0)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
-**🚀 Chrome Instance Management (v0.2.4)**
+**🚀 Chrome Instance Management (v0.8.0)**
+* **Proxy Support**: `restart_chrome` now accepts an optional `proxy_server` argument to launch Chrome routing traffic through a proxy.
 * **Auto-Launch**: Automatically detects if Chrome is running on port 9222. If not, it spawns a new instance with the required flags.
 * `restart_chrome`: Restarts the managed Chrome instance.
 * `stop_chrome`: Shuts down the managed Chrome instance gracefully (SIGTERM/SIGINT with fallback to SIGKILL).
 * **Robust Lifecycle**: Fixed issues with dangling Chrome processes and patched preferences for cleaner restarts.
+
+**🔐 Proxy Authentication (v0.8.0)**
+* `enable_proxy_auth`: Automatically handles proxy authentication challenges by hooking into the `Fetch` CDP domain and supplying user-provided credentials (username & password).
+* **Robustness Improvements**: Now features a 30-second timeout for slower residential proxies, and defaults to only intercepting `Document` requests to prevent breaking background requests.
+* **Pre-warming**: Automatically navigates to a `prewarm_url` (defaults to `http://api.ipify.org?format=json`) to establish the proxy tunnel reliably before your main navigation task. You can optionally restrict the interception to a specific `resource_type`.
 
 **🖱️ User Input (v0.5.1)**
 * `click_element`: Simulates a native mouse click on a specific element by using a CSS selector. It calculates the center coordinates of the element and dispatches CDP mouse events directly.

@@ -1,4 +1,5 @@
 pub mod debugger;
+pub mod fetch;
 pub mod input;
 pub mod network;
 pub mod page;

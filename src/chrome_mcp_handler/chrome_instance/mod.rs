@@ -13,12 +13,14 @@ pub trait ChromeManager: Send + Sync {
     fn get_port(&self) -> u16;
     #[allow(dead_code)]
     fn set_port(&mut self, port: u16);
+    fn set_proxy(&mut self, proxy: Option<String>);
 }
 
 pub struct ChromeInstanceManager {
     child: Option<Child>,
     port: u16,
     user_data_dir: std::path::PathBuf,
+    proxy_server: Option<String>,
 }
 
 #[async_trait]
@@ -38,6 +40,10 @@ impl ChromeManager for ChromeInstanceManager {
     fn set_port(&mut self, port: u16) {
         self.port = port;
     }
+
+    fn set_proxy(&mut self, proxy: Option<String>) {
+        self.proxy_server = proxy;
+    }
 }
 
 impl ChromeInstanceManager {
@@ -47,6 +53,7 @@ impl ChromeInstanceManager {
             child: None,
             port,
             user_data_dir,
+            proxy_server: None,
         }
     }
 
@@ -80,18 +87,21 @@ impl ChromeInstanceManager {
             let _ = self.patch_preferences();
         }
 
-        let child = Command::new("google-chrome")
-            .arg(format!("--remote-debugging-port={}", self.port))
+        let mut cmd = Command::new("google-chrome");
+        cmd.arg(format!("--remote-debugging-port={}", self.port))
             .arg(format!("--user-data-dir={}", self.user_data_dir.display()))
             .arg("--disable-gpu")
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
             .arg("--disable-session-crashed-bubble")
             .arg("--disable-infobars")
-            .arg("--noerrdialogs")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
+            .arg("--noerrdialogs");
+
+        if let Some(proxy) = &self.proxy_server {
+            cmd.arg(format!("--proxy-server={}", proxy));
+        }
+
+        let child = cmd.stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
 
         self.child = Some(child);
 
@@ -199,5 +209,9 @@ impl ChromeManager for MockChromeManager {
 
     fn set_port(&mut self, port: u16) {
         self.port = port;
+    }
+
+    fn set_proxy(&mut self, _proxy: Option<String>) {
+        // Mock: do nothing
     }
 }
