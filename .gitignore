@@ -8,3 +8,4 @@ GEMINI.md
 *.png
 src/bin/
 proxy.json
+.gemini/

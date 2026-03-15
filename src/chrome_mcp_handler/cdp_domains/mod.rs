@@ -1,3 +1,4 @@
+pub mod custom;
 pub mod debugger;
 pub mod fetch;
 pub mod input;

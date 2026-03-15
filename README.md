@@ -13,9 +13,14 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.8.0)
+## ✨ Features (v0.9.0)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
+
+**🛠️ Custom CDP Commands (v0.9.0)**
+* `send_cdp_command`: **EXPERIMENTAL**. Send any raw CDP command directly to the browser. This serves as a powerful fallback for any domain or command not yet natively implemented in specialized tools.
+* `get_custom_events`: Retrieve a list of events captured from the browser that are not handled by other specialized listeners (like network or console). Essential for observing the side-effects of custom commands.
+* **Broad Event Capture**: Automatically captures events from over 20+ domains (Target, DOM, CSS, Storage, etc.) and stores them in a rolling buffer for later inspection.
 
 **🚀 Chrome Instance Management (v0.8.0)**
 * **Proxy Support**: `restart_chrome` now accepts an optional `proxy_server` argument to launch Chrome routing traffic through a proxy.
@@ -94,6 +99,17 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/raultov/chrome-debug-mc
 ### 2. Configure your MCP Client
 Configure your AI client (like Claude Desktop, Zed, Cursor, or Gemini CLI) to execute the installed binary.
 
+#### **Gemini CLI (Recommended)**
+To add and activate the server in Gemini CLI:
+```bash
+gemini mcp add chrome-debug-mcp chrome-debug-mcp
+```
+Then, inside the Gemini CLI session, enable it:
+```bash
+/mcp enable chrome-debug-mcp
+```
+
+#### **Claude Desktop**
 Example configuration for Claude Desktop (`claude_desktop_config.json`):
 ```json
 {

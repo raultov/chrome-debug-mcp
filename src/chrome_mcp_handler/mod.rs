@@ -2,6 +2,8 @@ pub mod cdp_domains;
 pub mod chrome_instance;
 
 // use cdp_domains::debugger;
+use cdp_domains::custom::get_custom_events::GetCustomEventsTool;
+use cdp_domains::custom::send_cdp_command::SendCdpCommandTool;
 use cdp_domains::debugger::evaluate_on_call_frame::EvaluateOnCallFrameTool;
 use cdp_domains::debugger::pause_on_load::PauseOnLoadTool;
 use cdp_domains::debugger::remove_breakpoint::RemoveBreakpointTool;
@@ -72,12 +74,26 @@ pub(crate) struct NetworkState {
     pub ws_frames: std::collections::HashMap<String, Vec<WebSocketFrame>>,
 }
 
+#[derive(Clone, Debug, ::serde::Serialize, ::serde::Deserialize)]
+pub struct CustomEvent {
+    pub method: String,
+    pub params: serde_json::Value,
+    pub timestamp: String,
+}
+
+#[derive(Default)]
+pub(crate) struct CustomState {
+    pub events: std::collections::VecDeque<CustomEvent>,
+    pub active_domains: std::collections::HashSet<String>,
+}
+
 pub struct ChromeMcpHandler {
     pub(crate) client: Arc<Mutex<Option<CdpClient>>>,
     pub(crate) debugger_state: Arc<Mutex<DebuggerState>>,
     pub(crate) network_state: Arc<Mutex<NetworkState>>,
     pub(crate) log_state: Arc<Mutex<cdp_domains::log::LogState>>,
     pub(crate) tracing_state: Arc<Mutex<cdp_domains::tracing::TracingState>>,
+    pub(crate) custom_state: Arc<Mutex<CustomState>>,
     pub(crate) chrome_manager: Arc<Mutex<dyn chrome_instance::ChromeManager>>,
 }
 
@@ -89,6 +105,7 @@ impl ChromeMcpHandler {
             network_state: Arc::new(Mutex::new(NetworkState::default())),
             log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
             tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
+            custom_state: Arc::new(Mutex::new(CustomState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::ChromeInstanceManager::new(
                 port,
             ))),
@@ -103,6 +120,7 @@ impl ChromeMcpHandler {
             network_state: Arc::new(Mutex::new(NetworkState::default())),
             log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
             tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
+            custom_state: Arc::new(Mutex::new(CustomState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::MockChromeManager::new(9999))),
         }
     }
@@ -236,6 +254,8 @@ impl ServerHandler for ChromeMcpHandler {
                 GetPerformanceMetricsTool::tool(),
                 ProfilePagePerformanceTool::tool(),
                 EnableProxyAuthTool::tool(),
+                SendCdpCommandTool::tool(),
+                GetCustomEventsTool::tool(),
             ],
             meta: None,
             next_cursor: None,
@@ -291,6 +311,10 @@ impl ServerHandler for ChromeMcpHandler {
             ProfilePagePerformanceTool::handle(params, self).await
         } else if params.name == "enable_proxy_auth" {
             EnableProxyAuthTool::handle(params, self).await
+        } else if params.name == "send_cdp_command" {
+            SendCdpCommandTool::handle(params, self).await
+        } else if params.name == "get_custom_events" {
+            GetCustomEventsTool::handle(params, self).await
         } else {
             Err(CallToolError::unknown_tool(params.name))
         }
@@ -403,7 +427,7 @@ mod tests {
         let tools = result.unwrap().tools;
 
         // Ensure all registered tools are present
-        assert_eq!(tools.len(), 22);
+        assert_eq!(tools.len(), 24);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"scroll".to_string()));
         assert!(tool_names.contains(&"capture_screenshot".to_string()));
