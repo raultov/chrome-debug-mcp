@@ -1,6 +1,6 @@
 [package]
 name = "chrome-debug-mcp"
-version = "0.9.0"
+version = "0.9.1"
 edition = "2024"
 authors = ["raultov <raultov@protonmail.com>"]
 homepage = "https://github.com/raultov/chrome-debug-mcp"
@@ -10,6 +10,7 @@ license = "MIT"
 readme = "README.md"
 keywords = ["mcp", "chrome", "cdp", "debugging", "devtools"]
 categories = ["development-tools::debugging"]
+exclude = ["test_schema.rs"]
 
 [package.metadata.wix]
 upgrade-guid = "2958DD81-8E94-4127-88CF-C57E5FC53A12"

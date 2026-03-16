@@ -65,6 +65,12 @@ mod tests {
     use serde_json::json;
 
     #[tokio::test]
+    async fn test_get_custom_events_tool_schema() {
+        let tool_def = GetCustomEventsTool::tool();
+        println!("{}", serde_json::to_string_pretty(&tool_def).unwrap());
+    }
+
+    #[tokio::test]
     async fn test_get_custom_events_tool_deserialization() {
         let tool: Result<GetCustomEventsTool, _> = serde_json::from_value(json!({
             "filter_method": "Target.targetCreated",

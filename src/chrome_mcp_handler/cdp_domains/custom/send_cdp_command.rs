@@ -12,8 +12,9 @@ use rust_mcp_sdk::{
 pub struct SendCdpCommandTool {
     /// The CDP method name (e.g., 'DOM.getDocument').
     pub method: String,
-    /// The parameters for the CDP command.
-    pub params: serde_json::Value,
+    /// A JSON string representing the parameters for the CDP command (e.g., '{"url": "https://example.com"}'). Omit or provide '{}' if no parameters are needed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<String>,
 }
 
 impl SendCdpCommandTool {
@@ -26,6 +27,13 @@ impl SendCdpCommandTool {
         ))
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
 
+        let parsed_params: serde_json::Value = match &tool.params {
+            Some(s) if !s.trim().is_empty() => serde_json::from_str(s).map_err(|e| {
+                CallToolError::from_message(format!("Invalid JSON in params: {}", e))
+            })?,
+            _ => serde_json::Value::Object(Default::default()),
+        };
+
         let mut client_lock = handler.get_or_connect().await?;
         if let Some(client) = client_lock.as_mut() {
             // Extract domain from method (e.g., "DOM" from "DOM.getDocument")
@@ -33,7 +41,7 @@ impl SendCdpCommandTool {
                 super::ensure_domain_listener(client, &handler.custom_state, domain).await;
             }
 
-            let response = client.send_raw_command(&tool.method, tool.params).await;
+            let response = client.send_raw_command(&tool.method, parsed_params).await;
             match response {
                 Ok(res) => Ok(CallToolResult::text_content(vec![
                     format!(
@@ -64,12 +72,18 @@ mod tests {
     use tokio::sync::Mutex;
 
     #[tokio::test]
+    async fn test_send_cdp_command_schema() {
+        let tool_def = SendCdpCommandTool::tool();
+        println!("{}", serde_json::to_string_pretty(&tool_def).unwrap());
+    }
+
+    #[tokio::test]
     async fn test_send_cdp_command_params_deserialization() {
         let params: Result<CallToolRequestParams, _> = serde_json::from_value(json!({
             "name": "send_cdp_command",
             "arguments": {
                 "method": "Runtime.enable",
-                "params": {}
+                "params": "{}"
             }
         }));
         assert!(params.is_ok());
@@ -86,7 +100,7 @@ mod tests {
             "name": "send_cdp_command",
             "arguments": {
                 "method": "Runtime.enable",
-                "params": {}
+                "params": "{}"
             }
         }))
         .unwrap();
