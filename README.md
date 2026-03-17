@@ -77,6 +77,12 @@ This server natively implements a suite of tools categorized by CDP domains and 
 
 ---
 
+## ⚙️ Configuration
+
+By default, the MCP Server attempts to find the Chrome executable in standard OS-specific locations (e.g., `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` on macOS, or `chrome` in your system `PATH` on Windows). If you have Chrome installed in a custom location, you can set the `CHROME_PATH` environment variable to explicitly define the path to the executable.
+
+---
+
 ## 🚀 Quick Start
 
 The easiest way to install and run the MCP Server natively is via Rust's Cargo or by downloading the pre-compiled binaries. You **do not** need to start Chrome manually anymore, the MCP Server will automatically launch a visible instance of Chrome with the correct debugging flags.

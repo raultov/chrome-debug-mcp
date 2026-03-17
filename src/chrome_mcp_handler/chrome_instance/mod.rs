@@ -47,6 +47,27 @@ impl ChromeManager for ChromeInstanceManager {
 }
 
 impl ChromeInstanceManager {
+    fn get_chrome_path() -> String {
+        if let Ok(path) = std::env::var("CHROME_PATH") {
+            return path;
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome".to_string();
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            return "chrome".to_string();
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            "google-chrome".to_string()
+        }
+    }
+
     pub fn new(port: u16) -> Self {
         let user_data_dir = std::env::temp_dir().join(format!("chrome-mcp-profile-{}", port));
         Self {
@@ -87,7 +108,8 @@ impl ChromeInstanceManager {
             let _ = self.patch_preferences();
         }
 
-        let mut cmd = Command::new("google-chrome");
+        let chrome_path = Self::get_chrome_path();
+        let mut cmd = Command::new(&chrome_path);
         cmd.arg(format!("--remote-debugging-port={}", self.port))
             .arg(format!("--user-data-dir={}", self.user_data_dir.display()))
             .arg("--disable-gpu")
@@ -101,7 +123,17 @@ impl ChromeInstanceManager {
             cmd.arg(format!("--proxy-server={}", proxy));
         }
 
-        let child = cmd.stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
+        let child = cmd
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to start Chrome using path '{}'. If Chrome is not installed in the default location, please set the CHROME_PATH environment variable to point to the executable. OS Error: {}",
+                    chrome_path,
+                    e
+                )
+            })?;
 
         self.child = Some(child);
 
@@ -213,5 +245,48 @@ impl ChromeManager for MockChromeManager {
 
     fn set_proxy(&mut self, _proxy: Option<String>) {
         // Mock: do nothing
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_chrome_path_with_env() {
+        // Set environment variable
+        unsafe {
+            std::env::set_var("CHROME_PATH", "/custom/path/to/chrome");
+        }
+
+        let path = ChromeInstanceManager::get_chrome_path();
+        assert_eq!(path, "/custom/path/to/chrome");
+
+        // Cleanup to not affect other tests
+        unsafe {
+            std::env::remove_var("CHROME_PATH");
+        }
+    }
+
+    #[test]
+    fn test_get_chrome_path_without_env() {
+        // Ensure env var is not set
+        unsafe {
+            std::env::remove_var("CHROME_PATH");
+        }
+
+        let path = ChromeInstanceManager::get_chrome_path();
+        // The default path depends on the OS
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            path,
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        );
+
+        #[cfg(target_os = "windows")]
+        assert_eq!(path, "chrome");
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        assert_eq!(path, "google-chrome");
     }
 }

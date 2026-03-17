@@ -6,7 +6,7 @@ use rust_mcp_sdk::{
 
 #[macros::mcp_tool(
     name = "restart_chrome",
-    description = "Restarts the managed Chrome instance with remote debugging enabled. This tool can be used to start a new instance or restart an already existing one."
+    description = "Restarts the managed Chrome instance with remote debugging enabled. This tool can be used to start a new instance or restart an already existing one. If Chrome fails to start due to a missing executable, advise the user to set the CHROME_PATH environment variable for the MCP server."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct RestartChromeTool {
