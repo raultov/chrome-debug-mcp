@@ -83,7 +83,13 @@ This server natively implements a suite of tools categorized by CDP domains and 
 
 ## ⚙️ Configuration
 
-By default, the MCP Server attempts to find the Chrome executable in standard OS-specific locations (e.g., `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` on macOS, or `chrome` in your system `PATH` on Windows). If you have Chrome installed in a custom location, you can set the `CHROME_PATH` environment variable to explicitly define the path to the executable.
+By default, the MCP Server attempts to find the Chrome executable in standard OS-specific locations (e.g., `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` on macOS, or `chrome` in your system `PATH` on Windows).
+
+**Arguments:**
+* `--local`: Restricts navigation to local addresses only (`localhost`, `127.0.0.1`, `192.168.x.x`, or `*.local`). Highly recommended for security when using the server for local development debugging.
+
+**Environment Variables:**
+* `CHROME_PATH`: Set this to explicitly define the path to the Chrome executable if it's installed in a custom location.
 
 ---
 
@@ -126,13 +132,13 @@ Example configuration for Claude Desktop (`claude_desktop_config.json`):
   "mcpServers": {
     "chrome-debug-mcp": {
       "command": "chrome-debug-mcp",
-      "args": [],
+      "args": ["--local"],
       "env": {}
     }
   }
 }
 ```
-*Note: If you downloaded the binary manually, replace `"chrome-debug-mcp"` with the absolute path to the executable.*
+*Note: If you downloaded the binary manually, replace `"chrome-debug-mcp"` with the absolute path to the executable. Remove `"args": ["--local"]` if you wish to allow navigation to external websites.*
 
 ### 3. Usage
 Once connected, the AI agent will automatically handle starting Chrome when the first command is executed. The browser will remain visible so you can visually track the debugging process.
