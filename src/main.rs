@@ -1,13 +1,25 @@
 mod chrome_mcp_handler;
 
 use chrome_mcp_handler::ChromeMcpHandler;
+use clap::Parser;
 use rust_mcp_sdk::{error::SdkResult, mcp_server::server_runtime, schema::*, *};
 
-// TODO for version 1.0 the mcp will be able to run inside a docker container starting up a headless chrome inside the container, and optionally it will be able to manage a host machine browser if it started with debugging enabled.
-// TODO render a sourrounding frame in the browser view when running any tool.
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Restricted to local addresses only (localhost, 127.0.0.1, 192.168.x.x, *.local)
+    #[arg(long)]
+    local: bool,
+
+    /// Chrome remote debugging port
+    #[arg(long, default_value_t = 9222)]
+    port: u16,
+}
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {
+    let args = Args::parse();
+
     let server_info = InitializeResult {
         server_info: Implementation {
             name: env!("CARGO_PKG_NAME").into(),
@@ -27,7 +39,7 @@ async fn main() -> SdkResult<()> {
     };
 
     let transport = StdioTransport::new(TransportOptions::default())?;
-    let handler = ChromeMcpHandler::default().to_mcp_server_handler();
+    let handler = ChromeMcpHandler::new_with_port(args.port, args.local).to_mcp_server_handler();
     let server = server_runtime::create_server(rust_mcp_sdk::mcp_server::McpServerOptions {
         server_details: server_info,
         transport,

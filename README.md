@@ -13,9 +13,13 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.9.0)
+## ✨ Features (v0.9.3)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
+
+**🔒 Local-Only Mode (v0.9.3)**
+* **Restricted Navigation**: Run the MCP server with the `--local` argument to restrict navigation to local addresses only: `localhost`, `127.0.0.1`, `192.168.x.x`, or addresses with the `.local` suffix. This is ideal for securely debugging local development environments without risking accidental navigation to external sites.
+* **Clear Error Messaging**: If a navigation to an external address is attempted in local-only mode, the server returns a descriptive error explaining the restriction and how to disable it.
 
 **🛠️ Custom CDP Commands (v0.9.0)**
 * `send_cdp_command`: **EXPERIMENTAL**. Send any raw CDP command directly to the browser. This serves as a powerful fallback for any domain or command not yet natively implemented in specialized tools.

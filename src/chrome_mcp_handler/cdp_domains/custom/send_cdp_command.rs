@@ -1,4 +1,4 @@
-use crate::chrome_mcp_handler::ChromeMcpHandler;
+use crate::chrome_mcp_handler::{ChromeMcpHandler, is_local_address};
 use rust_mcp_sdk::{
     macros,
     schema::{CallToolError, CallToolRequestParams, CallToolResult},
@@ -33,6 +33,15 @@ impl SendCdpCommandTool {
             })?,
             _ => serde_json::Value::Object(Default::default()),
         };
+
+        if handler.local_only && tool.method == "Page.navigate"
+            && let Some(url) = parsed_params.get("url").and_then(|v| v.as_str())
+                && !is_local_address(url) {
+                    return Err(CallToolError::from_message(format!(
+                        "Navigation to '{}' via raw CDP command is blocked. This MCP server is running with the 'local' argument, which restricts navigation to local addresses only (localhost, 127.0.0.1, 192.168.x.x, or *.local). To allow navigation to external addresses, restart the MCP server without the 'local' argument.",
+                        url
+                    )));
+                }
 
         let mut client_lock = handler.get_or_connect().await?;
         if let Some(client) = client_lock.as_mut() {
@@ -120,5 +129,48 @@ mod tests {
         // Verify active_domains has 'Runtime'
         let st = handler.custom_state.lock().await;
         assert!(st.active_domains.contains("Runtime"));
+    }
+
+    #[tokio::test]
+    async fn test_send_cdp_command_local_only_restriction() {
+        let mut handler = ChromeMcpHandler::new_test();
+        handler.local_only = true;
+
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "send_cdp_command",
+            "arguments": {
+                "method": "Page.navigate",
+                "params": "{\"url\": \"https://google.com\"}"
+            }
+        }))
+        .unwrap();
+
+        let result = SendCdpCommandTool::handle(params, &handler).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Navigation to 'https://google.com' via raw CDP command is blocked")
+        );
+
+        // Test with local address
+        let params_local: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "send_cdp_command",
+            "arguments": {
+                "method": "Page.navigate",
+                "params": "{\"url\": \"http://localhost:3000\"}"
+            }
+        }))
+        .unwrap();
+
+        let port = spawn_mock_chrome_server().await;
+        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+
+        let result_local = SendCdpCommandTool::handle(params_local, &handler).await;
+        assert!(
+            result_local.is_ok(),
+            "Local navigation should succeed: {:?}",
+            result_local.err()
+        );
     }
 }

@@ -95,10 +95,11 @@ pub struct ChromeMcpHandler {
     pub(crate) tracing_state: Arc<Mutex<cdp_domains::tracing::TracingState>>,
     pub(crate) custom_state: Arc<Mutex<CustomState>>,
     pub(crate) chrome_manager: Arc<Mutex<dyn chrome_instance::ChromeManager>>,
+    pub(crate) local_only: bool,
 }
 
 impl ChromeMcpHandler {
-    pub fn new_with_port(port: u16) -> Self {
+    pub fn new_with_port(port: u16, local_only: bool) -> Self {
         Self {
             client: Arc::new(Mutex::new(None)),
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
@@ -109,6 +110,7 @@ impl ChromeMcpHandler {
             chrome_manager: Arc::new(Mutex::new(chrome_instance::ChromeInstanceManager::new(
                 port,
             ))),
+            local_only,
         }
     }
 
@@ -122,14 +124,40 @@ impl ChromeMcpHandler {
             tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
             custom_state: Arc::new(Mutex::new(CustomState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::MockChromeManager::new(9999))),
+            local_only: false,
         }
     }
 }
 
 impl Default for ChromeMcpHandler {
     fn default() -> Self {
-        Self::new_with_port(9222)
+        Self::new_with_port(9222, false)
     }
+}
+
+pub(crate) fn is_local_address(url_str: &str) -> bool {
+    let url = match url::Url::parse(url_str) {
+        Ok(u) => u,
+        Err(_) => return false,
+    };
+
+    let host = match url.host_str() {
+        Some(h) => h,
+        None => return false,
+    };
+
+    // localhost, 127.0.0.1, [::1], 192.168.x.x, or .local
+    if host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host == "[::1]"
+        || host.ends_with(".local")
+        || host.starts_with("192.168.")
+    {
+        return true;
+    }
+
+    false
 }
 
 pub(crate) fn extract_from_value<'a>(
