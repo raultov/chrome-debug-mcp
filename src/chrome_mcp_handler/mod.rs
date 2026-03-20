@@ -415,6 +415,30 @@ mod tests {
         }
     }
     #[test]
+    fn test_is_local_address() {
+        // Positive cases
+        assert!(is_local_address("http://localhost"));
+        assert!(is_local_address("https://localhost:8080"));
+        assert!(is_local_address("http://127.0.0.1"));
+        assert!(is_local_address("http://127.0.0.1:3000/path"));
+        assert!(is_local_address("http://[::1]"));
+        assert!(is_local_address("http://[::1]:5173"));
+        assert!(is_local_address("http://192.168.1.1"));
+        assert!(is_local_address("https://192.168.0.100/admin"));
+        assert!(is_local_address("http://mydevice.local"));
+        assert!(is_local_address("http://service.local:8000"));
+
+        // Negative cases
+        assert!(!is_local_address("http://google.com"));
+        assert!(!is_local_address("https://github.com/raultov"));
+        assert!(!is_local_address("http://8.8.8.8"));
+        assert!(!is_local_address("http://10.0.0.1"));
+        assert!(!is_local_address("not a url"));
+        assert!(!is_local_address("http://local.com"));
+        assert!(!is_local_address("http://192.167.1.1"));
+    }
+
+    #[test]
     fn test_extract_from_value() {
         let val = Some(json!({"testKey": "testValue", "numKey": 42}));
         assert_eq!(extract_from_value(&val, "testKey"), Some("testValue"));

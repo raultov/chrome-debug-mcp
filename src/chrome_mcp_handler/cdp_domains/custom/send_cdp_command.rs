@@ -34,14 +34,16 @@ impl SendCdpCommandTool {
             _ => serde_json::Value::Object(Default::default()),
         };
 
-        if handler.local_only && tool.method == "Page.navigate"
+        if handler.local_only
+            && tool.method == "Page.navigate"
             && let Some(url) = parsed_params.get("url").and_then(|v| v.as_str())
-                && !is_local_address(url) {
-                    return Err(CallToolError::from_message(format!(
-                        "Navigation to '{}' via raw CDP command is blocked. This MCP server is running with the 'local' argument, which restricts navigation to local addresses only (localhost, 127.0.0.1, 192.168.x.x, or *.local). To allow navigation to external addresses, restart the MCP server without the 'local' argument.",
-                        url
-                    )));
-                }
+            && !is_local_address(url)
+        {
+            return Err(CallToolError::from_message(format!(
+                "Navigation to '{}' via raw CDP command is blocked. This MCP server is running with the 'local' argument, which restricts navigation to local addresses only (localhost, 127.0.0.1, 192.168.x.x, or *.local). To allow navigation to external addresses, restart the MCP server without the 'local' argument.",
+                url
+            )));
+        }
 
         let mut client_lock = handler.get_or_connect().await?;
         if let Some(client) = client_lock.as_mut() {
