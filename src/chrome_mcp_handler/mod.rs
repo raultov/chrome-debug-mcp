@@ -489,7 +489,8 @@ mod tests {
 
     #[test]
     fn test_chrome_mcp_handler_new_with_automation() {
-        let handler = ChromeMcpHandler::new_with_port(9444, true, true);
+        let handler =
+            ChromeMcpHandler::new_with_params("127.0.0.1".into(), 9444, true, true, false);
         assert!(handler.local_only);
         // We can check if the internal manager exists but checking its private fields is tricky
         // so we just ensure it compiles and runs correctly.
