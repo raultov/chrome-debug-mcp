@@ -30,7 +30,6 @@ use chrome_instance::stop_chrome::StopChromeTool;
 use async_trait::async_trait;
 use cdp_lite::client::CdpClient;
 use rust_mcp_sdk::{McpServer, mcp_server::ServerHandler, schema::*};
-use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -100,7 +99,7 @@ pub struct ChromeMcpHandler {
 }
 
 impl ChromeMcpHandler {
-    pub fn new_with_port(port: u16, local_only: bool) -> Self {
+    pub fn new_with_port(port: u16, local_only: bool, enable_automation: bool) -> Self {
         Self {
             client: Arc::new(Mutex::new(None)),
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
@@ -110,6 +109,7 @@ impl ChromeMcpHandler {
             custom_state: Arc::new(Mutex::new(CustomState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::ChromeInstanceManager::new(
                 port,
+                enable_automation,
             ))),
             local_only,
         }
@@ -132,7 +132,7 @@ impl ChromeMcpHandler {
 
 impl Default for ChromeMcpHandler {
     fn default() -> Self {
-        Self::new_with_port(9222, false)
+        Self::new_with_port(9222, false, false)
     }
 }
 
@@ -180,24 +180,6 @@ pub(crate) fn find_line_column(source: &str, pattern: &str) -> Option<(u32, u32)
     Some((line_number, column_number))
 }
 
-const VISUAL_FRAME_SCRIPT: &str = r#"
-(function() {
-    if (document.getElementById('__mcp_chrome_control_frame__')) return;
-    const frame = document.createElement('div');
-    frame.id = '__mcp_chrome_control_frame__';
-    frame.style.position = 'fixed';
-    frame.style.top = '0';
-    frame.style.left = '0';
-    frame.style.width = '100vw';
-    frame.style.height = '100vh';
-    frame.style.pointerEvents = 'none';
-    frame.style.zIndex = '2147483647';
-    frame.style.boxShadow = 'inset 0 0 0 20px rgba(144, 238, 144, 0.5)';
-    frame.style.boxSizing = 'border-box';
-    document.documentElement.appendChild(frame);
-})();
-"#;
-
 impl ChromeMcpHandler {
     pub(crate) async fn get_or_connect(
         &self,
@@ -234,26 +216,6 @@ impl ChromeMcpHandler {
                         .await;
                     let _ = client
                         .send_raw_command("Performance.enable", cdp_lite::protocol::NoParams)
-                        .await;
-
-                    // Inject visual frame script to persist across navigations
-                    let _ = client
-                        .send_raw_command(
-                            "Page.addScriptToEvaluateOnNewDocument",
-                            json!({
-                                "source": VISUAL_FRAME_SCRIPT
-                            }),
-                        )
-                        .await;
-
-                    // Also evaluate it immediately on the current page
-                    let _ = client
-                        .send_raw_command(
-                            "Runtime.evaluate",
-                            json!({
-                                "expression": VISUAL_FRAME_SCRIPT
-                            }),
-                        )
                         .await;
 
                     cdp_domains::debugger::start_debugger_listener(
@@ -503,6 +465,14 @@ mod tests {
         assert_eq!(col, 0);
 
         assert_eq!(find_line_column(source, "not_found"), None);
+    }
+
+    #[test]
+    fn test_chrome_mcp_handler_new_with_automation() {
+        let handler = ChromeMcpHandler::new_with_port(9444, true, true);
+        assert!(handler.local_only);
+        // We can check if the internal manager exists but checking its private fields is tricky
+        // so we just ensure it compiles and runs correctly.
     }
 
     #[tokio::test]

@@ -13,13 +13,9 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.9.4)
+## ✨ Features (v0.9.5)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
-
-**🎨 Visual Distinction (v0.9.4)**
-* **Controlled Browser Frame**: To easily distinguish the Chrome instance controlled by the MCP from other windows, a light green (20px) frame is rendered around the viewport.
-* **Screenshot Cleanliness**: The visual frame is automatically hidden during `capture_screenshot` operations, ensuring your captured images remain clean and professional.
 
 **🔒 Local-Only Mode (v0.9.3)**
 * **Restricted Navigation**: Run the MCP server with the `--local` argument to restrict navigation to local addresses only: `localhost`, `127.0.0.1`, `192.168.x.x`, or addresses with the `.local` suffix. This is ideal for securely debugging local development environments without risking accidental navigation to external sites.
@@ -30,7 +26,8 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * `get_custom_events`: Retrieve a list of events captured from the browser that are not handled by other specialized listeners (like network or console). Essential for observing the side-effects of custom commands.
 * **Broad Event Capture**: Automatically captures events from over 20+ domains (Target, DOM, CSS, Storage, etc.) and stores them in a rolling buffer for later inspection.
 
-**🚀 Chrome Instance Management (v0.8.0)**
+**🚀 Chrome Instance Management (v0.9.5)**
+* **Optional Automation Infobar**: Add the `--enable-automation` flag to the MCP server arguments to explicitly show the native "Chrome is being controlled by automated test software" message and enable `navigator.webdriver = true` behavior. By default, this is disabled for stealthier interaction.
 * **Proxy Support**: `restart_chrome` now accepts an optional `proxy_server` argument to launch Chrome routing traffic through a proxy.
 * **Auto-Launch**: Automatically detects if Chrome is running on port 9222. If not, it spawns a new instance with the required flags.
 * `restart_chrome`: Restarts the managed Chrome instance.

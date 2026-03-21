@@ -21,6 +21,7 @@ pub struct ChromeInstanceManager {
     port: u16,
     user_data_dir: std::path::PathBuf,
     proxy_server: Option<String>,
+    enable_automation: bool,
 }
 
 #[async_trait]
@@ -68,13 +69,14 @@ impl ChromeInstanceManager {
         }
     }
 
-    pub fn new(port: u16) -> Self {
+    pub fn new(port: u16, enable_automation: bool) -> Self {
         let user_data_dir = std::env::temp_dir().join(format!("chrome-mcp-profile-{}", port));
         Self {
             child: None,
             port,
             user_data_dir,
             proxy_server: None,
+            enable_automation,
         }
     }
 
@@ -116,8 +118,13 @@ impl ChromeInstanceManager {
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
             .arg("--disable-session-crashed-bubble")
-            .arg("--disable-infobars")
             .arg("--noerrdialogs");
+
+        if self.enable_automation {
+            cmd.arg("--enable-automation");
+        } else {
+            cmd.arg("--disable-infobars");
+        }
 
         if let Some(proxy) = &self.proxy_server {
             cmd.arg(format!("--proxy-server={}", proxy));
@@ -288,5 +295,17 @@ mod tests {
 
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         assert_eq!(path, "google-chrome");
+    }
+
+    #[test]
+    fn test_chrome_instance_manager_new() {
+        let port = 9333;
+        let manager = ChromeInstanceManager::new(port, true);
+        assert_eq!(manager.port, port);
+        assert!(manager.enable_automation);
+        assert!(manager.user_data_dir.to_string_lossy().contains("9333"));
+
+        let manager_no_auto = ChromeInstanceManager::new(port, false);
+        assert!(!manager_no_auto.enable_automation);
     }
 }

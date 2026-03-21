@@ -82,28 +82,8 @@ impl CaptureScreenshotTool {
             }
         }
 
-        // Hide visual frame if it exists
-        let _ = cdp_client
-            .send_raw_command(
-                "Runtime.evaluate",
-                json!({
-                    "expression": "if(document.getElementById('__mcp_chrome_control_frame__')) { document.getElementById('__mcp_chrome_control_frame__').style.display = 'none'; }"
-                }),
-            )
-            .await;
-
         let result = cdp_client
             .send_raw_command("Page.captureScreenshot", command_params)
-            .await;
-
-        // Restore visual frame
-        let _ = cdp_client
-            .send_raw_command(
-                "Runtime.evaluate",
-                json!({
-                    "expression": "if(document.getElementById('__mcp_chrome_control_frame__')) { document.getElementById('__mcp_chrome_control_frame__').style.display = 'block'; }"
-                }),
-            )
             .await;
 
         match result {

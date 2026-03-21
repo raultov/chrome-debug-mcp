@@ -11,6 +11,10 @@ struct Args {
     #[arg(long)]
     local: bool,
 
+    /// Enables the 'Chrome is being controlled by automated test software' infobar
+    #[arg(long)]
+    enable_automation: bool,
+
     /// Chrome remote debugging port
     #[arg(long, default_value_t = 9222)]
     port: u16,
@@ -22,6 +26,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> SdkResult<()> {
     let args = Args::parse();
+    eprintln!("[DEBUG] Starting with args: {:?}", args);
 
     let server_info = InitializeResult {
         server_info: Implementation {
@@ -42,7 +47,8 @@ async fn main() -> SdkResult<()> {
     };
 
     let transport = StdioTransport::new(TransportOptions::default())?;
-    let handler = ChromeMcpHandler::new_with_port(args.port, args.local).to_mcp_server_handler();
+    let handler = ChromeMcpHandler::new_with_port(args.port, args.local, args.enable_automation)
+        .to_mcp_server_handler();
     let server = server_runtime::create_server(rust_mcp_sdk::mcp_server::McpServerOptions {
         server_details: server_info,
         transport,
@@ -56,4 +62,35 @@ async fn main() -> SdkResult<()> {
         return Err(e);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_args_parsing_defaults() {
+        let args = Args::parse_from(["chrome-debug-mcp"]);
+        assert_eq!(args.port, 9222);
+        assert!(!args.local);
+        assert!(!args.enable_automation);
+    }
+
+    #[test]
+    fn test_args_parsing_enable_automation() {
+        let args = Args::parse_from(["chrome-debug-mcp", "--enable-automation"]);
+        assert!(args.enable_automation);
+    }
+
+    #[test]
+    fn test_args_parsing_local() {
+        let args = Args::parse_from(["chrome-debug-mcp", "--local"]);
+        assert!(args.local);
+    }
+
+    #[test]
+    fn test_args_parsing_custom_port() {
+        let args = Args::parse_from(["chrome-debug-mcp", "--port", "8080"]);
+        assert_eq!(args.port, 8080);
+    }
 }
