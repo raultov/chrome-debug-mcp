@@ -13,9 +13,13 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.9.3)
+## ✨ Features (v0.9.4)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
+
+**🎨 Visual Distinction (v0.9.4)**
+* **Controlled Browser Frame**: To easily distinguish the Chrome instance controlled by the MCP from other windows, a light green (20px) frame is rendered around the viewport.
+* **Screenshot Cleanliness**: The visual frame is automatically hidden during `capture_screenshot` operations, ensuring your captured images remain clean and professional.
 
 **🔒 Local-Only Mode (v0.9.3)**
 * **Restricted Navigation**: Run the MCP server with the `--local` argument to restrict navigation to local addresses only: `localhost`, `127.0.0.1`, `192.168.x.x`, or addresses with the `.local` suffix. This is ideal for securely debugging local development environments without risking accidental navigation to external sites.

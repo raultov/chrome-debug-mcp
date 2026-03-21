@@ -30,6 +30,7 @@ use chrome_instance::stop_chrome::StopChromeTool;
 use async_trait::async_trait;
 use cdp_lite::client::CdpClient;
 use rust_mcp_sdk::{McpServer, mcp_server::ServerHandler, schema::*};
+use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -179,6 +180,24 @@ pub(crate) fn find_line_column(source: &str, pattern: &str) -> Option<(u32, u32)
     Some((line_number, column_number))
 }
 
+const VISUAL_FRAME_SCRIPT: &str = r#"
+(function() {
+    if (document.getElementById('__mcp_chrome_control_frame__')) return;
+    const frame = document.createElement('div');
+    frame.id = '__mcp_chrome_control_frame__';
+    frame.style.position = 'fixed';
+    frame.style.top = '0';
+    frame.style.left = '0';
+    frame.style.width = '100vw';
+    frame.style.height = '100vh';
+    frame.style.pointerEvents = 'none';
+    frame.style.zIndex = '2147483647';
+    frame.style.boxShadow = 'inset 0 0 0 20px rgba(144, 238, 144, 0.5)';
+    frame.style.boxSizing = 'border-box';
+    document.documentElement.appendChild(frame);
+})();
+"#;
+
 impl ChromeMcpHandler {
     pub(crate) async fn get_or_connect(
         &self,
@@ -215,6 +234,26 @@ impl ChromeMcpHandler {
                         .await;
                     let _ = client
                         .send_raw_command("Performance.enable", cdp_lite::protocol::NoParams)
+                        .await;
+
+                    // Inject visual frame script to persist across navigations
+                    let _ = client
+                        .send_raw_command(
+                            "Page.addScriptToEvaluateOnNewDocument",
+                            json!({
+                                "source": VISUAL_FRAME_SCRIPT
+                            }),
+                        )
+                        .await;
+
+                    // Also evaluate it immediately on the current page
+                    let _ = client
+                        .send_raw_command(
+                            "Runtime.evaluate",
+                            json!({
+                                "expression": VISUAL_FRAME_SCRIPT
+                            }),
+                        )
                         .await;
 
                     cdp_domains::debugger::start_debugger_listener(

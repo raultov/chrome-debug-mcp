@@ -16,6 +16,9 @@ struct Args {
     port: u16,
 }
 
+// TODO for version 1.0 the mcp will be able to run inside a docker container starting up a headless chrome inside the container, and optionally it will be able to manage a host machine browser if it started with debugging enabled.
+// TODO render a sourrounding frame in the browser view when running any tool.
+
 #[tokio::main]
 async fn main() -> SdkResult<()> {
     let args = Args::parse();
