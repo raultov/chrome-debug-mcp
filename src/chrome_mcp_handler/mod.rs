@@ -123,16 +123,6 @@ impl ChromeMcpHandler {
         }
     }
 
-    pub fn new_with_port(port: u16, local_only: bool, enable_automation: bool) -> Self {
-        Self::new_with_params(
-            "127.0.0.1".into(),
-            port,
-            local_only,
-            enable_automation,
-            false,
-        )
-    }
-
     #[cfg(test)]
     pub fn new_test() -> Self {
         Self {
