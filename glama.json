@@ -2,5 +2,32 @@
   "$schema": "https://glama.ai/mcp/schemas/server.json",
   "maintainers": [
     "raultov"
-  ]
+  ],
+  "docker": {
+    "source": "repository",
+    "file": "Dockerfile"
+  },
+  "runtime": {
+    "command": "chrome-debug-mcp",
+    "args": [
+      {
+        "name": "--headless",
+        "description": "Run Chrome in headless mode (recommended for Docker)",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "name": "--host",
+        "description": "Target host for Chrome remote debugging",
+        "type": "string",
+        "default": "127.0.0.1"
+      },
+      {
+        "name": "--enable-automation",
+        "description": "Enable automation infobar",
+        "type": "boolean",
+        "default": false
+      }
+    ]
+  }
 }

@@ -18,10 +18,12 @@ pub trait ChromeManager: Send + Sync {
 
 pub struct ChromeInstanceManager {
     child: Option<Child>,
+    host: String,
     port: u16,
     user_data_dir: std::path::PathBuf,
     proxy_server: Option<String>,
     enable_automation: bool,
+    headless: bool,
 }
 
 #[async_trait]
@@ -69,14 +71,16 @@ impl ChromeInstanceManager {
         }
     }
 
-    pub fn new(port: u16, enable_automation: bool) -> Self {
+    pub fn new(host: String, port: u16, enable_automation: bool, headless: bool) -> Self {
         let user_data_dir = std::env::temp_dir().join(format!("chrome-mcp-profile-{}", port));
         Self {
             child: None,
+            host,
             port,
             user_data_dir,
             proxy_server: None,
             enable_automation,
+            headless,
         }
     }
 
@@ -86,16 +90,29 @@ impl ChromeInstanceManager {
     }
 
     async fn is_port_open(&self) -> bool {
-        let addr = format!("127.0.0.1:{}", self.port);
+        let addr = format!("{}:{}", self.host, self.port);
         TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(200)).is_ok()
     }
 
     async fn ensure_instance_impl(&mut self) -> anyhow::Result<()> {
-        let _ = self.log("ensure_instance started");
+        let _ = self.log(&format!(
+            "ensure_instance started for {}:{}",
+            self.host, self.port
+        ));
         if self.is_port_open().await {
             // Already running
             return Ok(());
         }
+
+        // If host is not local, we cannot start the instance
+        if self.host != "127.0.0.1" && self.host != "localhost" {
+            return Err(anyhow::anyhow!(
+                "Chrome instance not found at {}:{}. Cannot start remote instance.",
+                self.host,
+                self.port
+            ));
+        }
+
         self.start_instance().await
     }
 
@@ -124,6 +141,11 @@ impl ChromeInstanceManager {
             cmd.arg("--enable-automation");
         } else {
             cmd.arg("--disable-infobars");
+        }
+
+        if self.headless {
+            cmd.arg("--headless=new");
+            cmd.arg("--no-sandbox");
         }
 
         if let Some(proxy) = &self.proxy_server {
@@ -300,12 +322,15 @@ mod tests {
     #[test]
     fn test_chrome_instance_manager_new() {
         let port = 9333;
-        let manager = ChromeInstanceManager::new(port, true);
+        let manager = ChromeInstanceManager::new("127.0.0.1".into(), port, true, true);
         assert_eq!(manager.port, port);
+        assert_eq!(manager.host, "127.0.0.1");
         assert!(manager.enable_automation);
+        assert!(manager.headless);
         assert!(manager.user_data_dir.to_string_lossy().contains("9333"));
 
-        let manager_no_auto = ChromeInstanceManager::new(port, false);
+        let manager_no_auto = ChromeInstanceManager::new("localhost".into(), port, false, false);
         assert!(!manager_no_auto.enable_automation);
+        assert!(!manager_no_auto.headless);
     }
 }

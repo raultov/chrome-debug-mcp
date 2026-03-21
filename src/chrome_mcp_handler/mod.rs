@@ -99,7 +99,13 @@ pub struct ChromeMcpHandler {
 }
 
 impl ChromeMcpHandler {
-    pub fn new_with_port(port: u16, local_only: bool, enable_automation: bool) -> Self {
+    pub fn new_with_params(
+        host: String,
+        port: u16,
+        local_only: bool,
+        enable_automation: bool,
+        headless: bool,
+    ) -> Self {
         Self {
             client: Arc::new(Mutex::new(None)),
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
@@ -108,11 +114,23 @@ impl ChromeMcpHandler {
             tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
             custom_state: Arc::new(Mutex::new(CustomState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::ChromeInstanceManager::new(
+                host,
                 port,
                 enable_automation,
+                headless,
             ))),
             local_only,
         }
+    }
+
+    pub fn new_with_port(port: u16, local_only: bool, enable_automation: bool) -> Self {
+        Self::new_with_params(
+            "127.0.0.1".into(),
+            port,
+            local_only,
+            enable_automation,
+            false,
+        )
     }
 
     #[cfg(test)]
@@ -132,7 +150,7 @@ impl ChromeMcpHandler {
 
 impl Default for ChromeMcpHandler {
     fn default() -> Self {
-        Self::new_with_port(9222, false, false)
+        Self::new_with_params("127.0.0.1".into(), 9222, false, false, false)
     }
 }
 
@@ -465,6 +483,18 @@ mod tests {
         assert_eq!(col, 0);
 
         assert_eq!(find_line_column(source, "not_found"), None);
+    }
+
+    #[test]
+    fn test_chrome_mcp_handler_new_with_params() {
+        let handler = ChromeMcpHandler::new_with_params(
+            "host.docker.internal".into(),
+            9222,
+            true,
+            true,
+            true,
+        );
+        assert!(handler.local_only);
     }
 
     #[test]

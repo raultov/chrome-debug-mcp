@@ -16,7 +16,7 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v0.9.6)
+## ✨ Features (v1.0.0)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
@@ -29,10 +29,12 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * `get_custom_events`: Retrieve a list of events captured from the browser that are not handled by other specialized listeners (like network or console). Essential for observing the side-effects of custom commands.
 * **Broad Event Capture**: Automatically captures events from over 20+ domains (Target, DOM, CSS, Storage, etc.) and stores them in a rolling buffer for later inspection.
 
-**🚀 Chrome Instance Management (v0.9.6)**
-* **Optional Automation Infobar**: Add the `--enable-automation` flag to the MCP server arguments to explicitly show the native "Chrome is being controlled by automated test software" message and enable `navigator.webdriver = true` behavior. By default, this is disabled for stealthier interaction.
+**🚀 Chrome Instance Management (v1.0.0)**
+* **Docker & Headless Support**: Full compatibility with Docker environments. Use the `--headless` flag to run Chrome without a GUI inside containers.
+* **Remote/Host Connection**: Use the `--host` argument to connect to a Chrome instance running on a different machine or the host machine (e.g., `--host host.docker.internal` from inside a container).
+* **Optional Automation Infobar**: Add the `--enable-automation` flag to explicitly show the native "Chrome is being controlled by automated test software" message. By default, this is disabled for stealthier interaction.
 * **Proxy Support**: `restart_chrome` now accepts an optional `proxy_server` argument to launch Chrome routing traffic through a proxy.
-* **Auto-Launch**: Automatically detects if Chrome is running on port 9222. If not, it spawns a new instance with the required flags.
+* **Auto-Launch**: Automatically detects if Chrome is running on the specified port. If not, it spawns a new instance with the required flags.
 * `restart_chrome`: Restarts the managed Chrome instance.
 * `stop_chrome`: Shuts down the managed Chrome instance gracefully (SIGTERM/SIGINT with fallback to SIGKILL).
 * **Robust Lifecycle**: Fixed issues with dangling Chrome processes and patched preferences for cleaner restarts.
@@ -90,10 +92,40 @@ This server natively implements a suite of tools categorized by CDP domains and 
 By default, the MCP Server attempts to find the Chrome executable in standard OS-specific locations (e.g., `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` on macOS, or `chrome` in your system `PATH` on Windows).
 
 **Arguments:**
-* `--local`: Restricts navigation to local addresses only (`localhost`, `127.0.0.1`, `192.168.x.x`, or `*.local`). Highly recommended for security when using the server for local development debugging.
+* `--local`: Restricts navigation to local addresses only (`localhost`, `127.0.0.1`, `192.168.x.x`, or `*.local`). Highly recommended for security.
+* `--headless`: Runs Chrome in headless mode (no GUI). Essential for Docker or server environments.
+* `--host`: Specifies the target host for the Chrome instance (default: `127.0.0.1`). Use `host.docker.internal` to connect to a host machine from a container.
+* `--port`: Specifies the remote debugging port (default: `9222`).
+* `--enable-automation`: Enables the "controlled by automated software" infobar.
 
 **Environment Variables:**
-* `CHROME_PATH`: Set this to explicitly define the path to the Chrome executable if it's installed in a custom location.
+* `CHROME_PATH`: Explicitly define the path to the Chrome executable.
+
+---
+
+## 🐳 Docker & Headless Usage (v1.0.0)
+
+`chrome-debug-mcp` is fully container-ready. This allows several powerful use cases for LLMs:
+
+### 1. Cloud Deployment (via Glama)
+The easiest way to use this server. Glama spawns a Docker container with Chrome pre-installed. The LLM gets immediate access to a browser in the cloud without any local setup.
+
+### 2. Isolated Local Use
+Run everything inside Docker to avoid installing Chrome or Rust on your host machine:
+```bash
+docker build -t chrome-mcp .
+docker run -i --rm chrome-mcp --headless
+```
+
+### 3. Hybrid Mode (Container controlling Host)
+The MCP server runs inside a secure Docker container but controls the Chrome instance on your actual desktop. This allows the LLM to assist you in your real browsing session:
+1. Start your local Chrome with: `--remote-debugging-port=9222`
+   * *Note: If you need proxy support in this mode, you must also start Chrome with the `--proxy-server="http://your-proxy:port"` flag.*
+2. Run the container:
+```bash
+# On macOS/Windows
+docker run -i --rm chrome-mcp --host host.docker.internal
+```
 
 ---
 
@@ -117,9 +149,41 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/raultov/chrome-debug-mc
 ```
 
 ### 2. Configure your MCP Client
-Configure your AI client (like Claude Desktop, Zed, Cursor, or Gemini CLI) to execute the installed binary.
+This server is fully tested and confirmed to work with **Claude Desktop**, **Gemini CLI**, and **ChatGPT (GPT) CLI**. Configure your AI client to execute the server using any of the following modes.
 
-#### **Gemini CLI (Recommended)**
+#### **Universal Configuration (JSON)**
+Most MCP clients (like Claude Desktop or any JSON-based config) use this structure. Here are the three main usage modes:
+
+```json
+{
+  "mcpServers": {
+    "chrome-debug-mcp": {
+      "command": "chrome-debug-mcp",
+      "args": [],
+      "env": {}
+    },
+    "chrome-docker": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "chrome-debug-mcp:v1.0.0", "--headless"]
+    },
+    "chrome-docker-hybrid": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--net=host",
+        "chrome-debug-mcp:v1.0.0",
+        "--host",
+        "127.0.0.1"
+      ]
+    }
+  }
+}
+```
+*Note: The `chrome-docker-hybrid` mode using `--net=host` is the recommended way on Linux to allow the container to access your local Chrome instance on `127.0.0.1`.*
+
+#### **Gemini CLI**
 To add and activate the server in Gemini CLI:
 ```bash
 gemini mcp add chrome-debug-mcp chrome-debug-mcp
@@ -128,21 +192,6 @@ Then, inside the Gemini CLI session, enable it:
 ```bash
 /mcp enable chrome-debug-mcp
 ```
-
-#### **Claude Desktop**
-Example configuration for Claude Desktop (`claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "chrome-debug-mcp": {
-      "command": "chrome-debug-mcp",
-      "args": ["--local"],
-      "env": {}
-    }
-  }
-}
-```
-*Note: If you downloaded the binary manually, replace `"chrome-debug-mcp"` with the absolute path to the executable. Remove `"args": ["--local"]` if you wish to allow navigation to external websites.*
 
 ### 3. Usage
 Once connected, the AI agent will automatically handle starting Chrome when the first command is executed. The browser will remain visible so you can visually track the debugging process.

@@ -15,6 +15,14 @@ struct Args {
     #[arg(long)]
     enable_automation: bool,
 
+    /// Run Chrome in headless mode (no GUI). Required for Docker environments.
+    #[arg(long)]
+    headless: bool,
+
+    /// Target host for Chrome remote debugging (default: 127.0.0.1)
+    #[arg(long, default_value = "127.0.0.1")]
+    host: String,
+
     /// Chrome remote debugging port
     #[arg(long, default_value_t = 9222)]
     port: u16,
@@ -46,8 +54,14 @@ async fn main() -> SdkResult<()> {
     };
 
     let transport = StdioTransport::new(TransportOptions::default())?;
-    let handler = ChromeMcpHandler::new_with_port(args.port, args.local, args.enable_automation)
-        .to_mcp_server_handler();
+    let handler = ChromeMcpHandler::new_with_params(
+        args.host,
+        args.port,
+        args.local,
+        args.enable_automation,
+        args.headless,
+    )
+    .to_mcp_server_handler();
     let server = server_runtime::create_server(rust_mcp_sdk::mcp_server::McpServerOptions {
         server_details: server_info,
         transport,
@@ -71,8 +85,10 @@ mod tests {
     fn test_args_parsing_defaults() {
         let args = Args::parse_from(["chrome-debug-mcp"]);
         assert_eq!(args.port, 9222);
+        assert_eq!(args.host, "127.0.0.1");
         assert!(!args.local);
         assert!(!args.enable_automation);
+        assert!(!args.headless);
     }
 
     #[test]
@@ -91,5 +107,17 @@ mod tests {
     fn test_args_parsing_custom_port() {
         let args = Args::parse_from(["chrome-debug-mcp", "--port", "8080"]);
         assert_eq!(args.port, 8080);
+    }
+
+    #[test]
+    fn test_args_parsing_headless() {
+        let args = Args::parse_from(["chrome-debug-mcp", "--headless"]);
+        assert!(args.headless);
+    }
+
+    #[test]
+    fn test_args_parsing_custom_host() {
+        let args = Args::parse_from(["chrome-debug-mcp", "--host", "host.docker.internal"]);
+        assert_eq!(args.host, "host.docker.internal");
     }
 }

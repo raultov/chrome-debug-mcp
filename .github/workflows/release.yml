@@ -47,8 +47,18 @@ on:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
+  # Validate Dockerfile before proceeding with the release
+  validate-docker:
+    name: Validate Dockerfile
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t chrome-debug-mcp-test .
+
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
+    needs: [validate-docker]
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
