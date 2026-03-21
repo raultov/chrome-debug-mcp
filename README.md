@@ -20,6 +20,11 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
+**🛡️ Privacy & Security**
+* **Isolated Profiles**: Every time the MCP server launches Chrome, it creates a **fresh, temporary user profile** in your system's temporary directory. This profile is completely independent of your main browser profile.
+* **Incognito-like Experience**: No cookies, history, saved passwords, or session data from your personal accounts are shared with the managed instance.
+* **Identity Protection**: Even if an LLM has full control over the browser, it cannot access your logged-in sessions (e.g., Google, GitHub, banking) or impersonate you. This ensures a safe, sandboxed environment for automation and debugging.
+
 **🔒 Local-Only Mode (v0.9.3)**
 * **Restricted Navigation**: Run the MCP server with the `--local` argument to restrict navigation to local addresses only: `localhost`, `127.0.0.1`, `192.168.x.x`, or addresses with the `.local` suffix. This is ideal for securely debugging local development environments without risking accidental navigation to external sites.
 * **Clear Error Messaging**: If a navigation to an external address is attempted in local-only mode, the server returns a descriptive error explaining the restriction and how to disable it.
@@ -30,6 +35,7 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * **Broad Event Capture**: Automatically captures events from over 20+ domains (Target, DOM, CSS, Storage, etc.) and stores them in a rolling buffer for later inspection.
 
 **🚀 Chrome Instance Management (v1.0.0)**
+* **Isolated Profiles**: Launches Chrome using a fresh, temporary profile every time, ensuring it doesn't share cookies, passwords, or session data with your main browser.
 * **Docker & Headless Support**: Full compatibility with Docker environments. Use the `--headless` flag to run Chrome without a GUI inside containers.
 * **Remote/Host Connection**: Use the `--host` argument to connect to a Chrome instance running on a different machine or the host machine (e.g., `--host host.docker.internal` from inside a container).
 * **Optional Automation Infobar**: Add the `--enable-automation` flag to explicitly show the native "Chrome is being controlled by automated test software" message. By default, this is disabled for stealthier interaction.
