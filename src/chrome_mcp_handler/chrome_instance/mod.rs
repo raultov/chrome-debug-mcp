@@ -135,7 +135,8 @@ impl ChromeInstanceManager {
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
             .arg("--disable-session-crashed-bubble")
-            .arg("--noerrdialogs");
+            .arg("--noerrdialogs")
+            .arg("--disable-dev-shm-usage");
 
         if self.enable_automation {
             cmd.arg("--enable-automation");
@@ -145,6 +146,9 @@ impl ChromeInstanceManager {
 
         if self.headless {
             cmd.arg("--headless=new");
+        }
+
+        if self.headless || std::env::var("CHROME_NO_SANDBOX").is_ok() {
             cmd.arg("--no-sandbox");
         }
 
