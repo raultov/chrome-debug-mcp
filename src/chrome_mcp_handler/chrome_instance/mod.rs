@@ -24,6 +24,7 @@ pub struct ChromeInstanceManager {
     proxy_server: Option<String>,
     enable_automation: bool,
     headless: bool,
+    user_profile: bool,
 }
 
 #[async_trait]
@@ -71,7 +72,13 @@ impl ChromeInstanceManager {
         }
     }
 
-    pub fn new(host: String, port: u16, enable_automation: bool, headless: bool) -> Self {
+    pub fn new(
+        host: String,
+        port: u16,
+        enable_automation: bool,
+        headless: bool,
+        user_profile: bool,
+    ) -> Self {
         let user_data_dir = std::env::temp_dir().join(format!("chrome-mcp-profile-{}", port));
         Self {
             child: None,
@@ -81,6 +88,7 @@ impl ChromeInstanceManager {
             proxy_server: None,
             enable_automation,
             headless,
+            user_profile,
         }
     }
 
@@ -119,24 +127,29 @@ impl ChromeInstanceManager {
     async fn start_instance(&mut self) -> anyhow::Result<()> {
         let _ = self.log("Starting new instance...");
 
-        // Ensure user data dir exists
-        if !self.user_data_dir.exists() {
-            std::fs::create_dir_all(&self.user_data_dir)?;
-        } else {
-            // Patch preferences to avoid crash bubble
-            let _ = self.patch_preferences();
+        if !self.user_profile {
+            // Ensure user data dir exists
+            if !self.user_data_dir.exists() {
+                std::fs::create_dir_all(&self.user_data_dir)?;
+            } else {
+                // Patch preferences to avoid crash bubble
+                let _ = self.patch_preferences();
+            }
         }
 
         let chrome_path = Self::get_chrome_path();
         let mut cmd = Command::new(&chrome_path);
         cmd.arg(format!("--remote-debugging-port={}", self.port))
-            .arg(format!("--user-data-dir={}", self.user_data_dir.display()))
             .arg("--disable-gpu")
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
             .arg("--disable-session-crashed-bubble")
             .arg("--noerrdialogs")
             .arg("--disable-dev-shm-usage");
+
+        if !self.user_profile {
+            cmd.arg(format!("--user-data-dir={}", self.user_data_dir.display()));
+        }
 
         if self.enable_automation {
             cmd.arg("--enable-automation");
@@ -187,6 +200,9 @@ impl ChromeInstanceManager {
     }
 
     fn patch_preferences(&self) -> anyhow::Result<()> {
+        if self.user_profile {
+            return Ok(());
+        }
         let prefs_path = self.user_data_dir.join("Default").join("Preferences");
         if !prefs_path.exists() {
             return Ok(());
@@ -233,10 +249,12 @@ impl ChromeInstanceManager {
             let _ = child.wait();
         }
 
-        // Clean up SingletonLock
-        let lock_file = self.user_data_dir.join("SingletonLock");
-        if lock_file.exists() {
-            let _ = std::fs::remove_file(lock_file);
+        if !self.user_profile {
+            // Clean up SingletonLock
+            let lock_file = self.user_data_dir.join("SingletonLock");
+            if lock_file.exists() {
+                let _ = std::fs::remove_file(lock_file);
+            }
         }
 
         Ok(())
@@ -326,15 +344,18 @@ mod tests {
     #[test]
     fn test_chrome_instance_manager_new() {
         let port = 9333;
-        let manager = ChromeInstanceManager::new("127.0.0.1".into(), port, true, true);
+        let manager = ChromeInstanceManager::new("127.0.0.1".into(), port, true, true, false);
         assert_eq!(manager.port, port);
         assert_eq!(manager.host, "127.0.0.1");
         assert!(manager.enable_automation);
         assert!(manager.headless);
         assert!(manager.user_data_dir.to_string_lossy().contains("9333"));
+        assert!(!manager.user_profile);
 
-        let manager_no_auto = ChromeInstanceManager::new("localhost".into(), port, false, false);
+        let manager_no_auto =
+            ChromeInstanceManager::new("localhost".into(), port, false, false, true);
         assert!(!manager_no_auto.enable_automation);
         assert!(!manager_no_auto.headless);
+        assert!(manager_no_auto.user_profile);
     }
 }

@@ -15,6 +15,11 @@ struct Args {
     #[arg(long)]
     enable_automation: bool,
 
+    /// Use the default user profile (sessions, cookies, etc.) instead of a fresh one.
+    /// This starts Chrome without --user-data-dir.
+    #[arg(long)]
+    user_profile: bool,
+
     /// Run Chrome in headless mode (no GUI). Required for Docker environments.
     #[arg(long)]
     headless: bool,
@@ -58,6 +63,7 @@ async fn main() -> SdkResult<()> {
         args.local,
         args.enable_automation,
         args.headless,
+        args.user_profile,
     )
     .to_mcp_server_handler();
     let server = server_runtime::create_server(rust_mcp_sdk::mcp_server::McpServerOptions {
@@ -87,12 +93,19 @@ mod tests {
         assert!(!args.local);
         assert!(!args.enable_automation);
         assert!(!args.headless);
+        assert!(!args.user_profile);
     }
 
     #[test]
     fn test_args_parsing_enable_automation() {
         let args = Args::parse_from(["chrome-debug-mcp", "--enable-automation"]);
         assert!(args.enable_automation);
+    }
+
+    #[test]
+    fn test_args_parsing_user_profile() {
+        let args = Args::parse_from(["chrome-debug-mcp", "--user-profile"]);
+        assert!(args.user_profile);
     }
 
     #[test]

@@ -105,6 +105,7 @@ impl ChromeMcpHandler {
         local_only: bool,
         enable_automation: bool,
         headless: bool,
+        user_profile: bool,
     ) -> Self {
         Self {
             client: Arc::new(Mutex::new(None)),
@@ -118,6 +119,7 @@ impl ChromeMcpHandler {
                 port,
                 enable_automation,
                 headless,
+                user_profile,
             ))),
             local_only,
         }
@@ -140,7 +142,7 @@ impl ChromeMcpHandler {
 
 impl Default for ChromeMcpHandler {
     fn default() -> Self {
-        Self::new_with_params("127.0.0.1".into(), 9222, false, false, false)
+        Self::new_with_params("127.0.0.1".into(), 9222, false, false, false, false)
     }
 }
 
@@ -483,6 +485,7 @@ mod tests {
             true,
             true,
             true,
+            false,
         );
         assert!(handler.local_only);
     }
@@ -490,10 +493,8 @@ mod tests {
     #[test]
     fn test_chrome_mcp_handler_new_with_automation() {
         let handler =
-            ChromeMcpHandler::new_with_params("127.0.0.1".into(), 9444, true, true, false);
+            ChromeMcpHandler::new_with_params("127.0.0.1".into(), 9444, true, true, false, true);
         assert!(handler.local_only);
-        // We can check if the internal manager exists but checking its private fields is tricky
-        // so we just ensure it compiles and runs correctly.
     }
 
     #[tokio::test]

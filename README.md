@@ -16,14 +16,15 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v1.0.3)
+## ✨ Features (v1.0.4)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
 **🛡️ Privacy & Security**
-* **Isolated Profiles**: Every time the MCP server launches Chrome, it creates a **fresh, temporary user profile** in your system's temporary directory. This profile is completely independent of your main browser profile.
-* **Incognito-like Experience**: No cookies, history, saved passwords, or session data from your personal accounts are shared with the managed instance.
-* **Identity Protection**: Even if an LLM has full control over the browser, it cannot access your logged-in sessions (e.g., Google, GitHub, banking) or impersonate you. This ensures a safe, sandboxed environment for automation and debugging.
+* **Isolated Profiles (Default)**: By default, every time the MCP server launches Chrome, it creates a **fresh, temporary user profile** in your system's temporary directory. This profile is completely independent of your main browser profile.
+* **Incognito-like Experience**: No cookies, history, saved passwords, or session data from your personal accounts are shared with the managed instance by default.
+* **Identity Protection**: Even if an LLM has full control over the browser, it cannot access your logged-in sessions (e.g., Google, GitHub, banking) or impersonate you unless explicitly authorized.
+* **User Profile Mode (v1.0.4)**: Use the `--user-profile` flag to launch Chrome using your **existing system profile**. This is useful when you want the LLM to work within your active sessions (cookies, saved logins, etc.) without having to re-authenticate on every site. **Use with caution as this provides the LLM access to your personal browser data.**
 
 **🔒 Local-Only Mode (v0.9.3)**
 * **Restricted Navigation**: Run the MCP server with the `--local` argument to restrict navigation to local addresses only: `localhost`, `127.0.0.1`, `192.168.x.x`, or addresses with the `.local` suffix. This is ideal for securely debugging local development environments without risking accidental navigation to external sites.
@@ -35,7 +36,8 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * **Broad Event Capture**: Automatically captures events from over 20+ domains (Target, DOM, CSS, Storage, etc.) and stores them in a rolling buffer for later inspection.
 
 **🚀 Chrome Instance Management (v1.0.0)**
-* **Isolated Profiles**: Launches Chrome using a fresh, temporary profile every time, ensuring it doesn't share cookies, passwords, or session data with your main browser.
+* **Isolated Profiles**: Launches Chrome using a fresh, temporary profile by default, ensuring it doesn't share cookies, passwords, or session data with your main browser.
+* **User Profile Support (v1.0.4)**: Optionally use `--user-profile` to leverage your existing browser sessions and cookies.
 * **Docker & Headless Support**: Full compatibility with Docker environments. Use the `--headless` flag to run Chrome without a GUI inside containers.
 * **Remote/Host Connection**: Use the `--host` argument to connect to a Chrome instance running on a different machine or the host machine (e.g., `--host host.docker.internal` from inside a container).
 * **Optional Automation Infobar**: Add the `--enable-automation` flag to explicitly show the native "Chrome is being controlled by automated test software" message. By default, this is disabled for stealthier interaction.
@@ -100,6 +102,7 @@ By default, the MCP Server attempts to find the Chrome executable in standard OS
 **Arguments:**
 * `--local`: Restricts navigation to local addresses only (`localhost`, `127.0.0.1`, `192.168.x.x`, or `*.local`). Highly recommended for security.
 * `--headless`: Runs Chrome in headless mode (no GUI). Essential for Docker or server environments.
+* `--user-profile`: Use the default system user profile (sessions, cookies, etc.) instead of a fresh one. This is useful for avoiding repeated logins during research sessions.
 * `--host`: Specifies the target host for the Chrome instance (default: `127.0.0.1`). Use `host.docker.internal` to connect to a host machine from a container.
 * `--port`: Specifies the remote debugging port (default: `9222`).
 * `--enable-automation`: Enables the "controlled by automated software" infobar.
@@ -170,7 +173,7 @@ Most MCP clients (like Claude Desktop or any JSON-based config) use this structu
     },
     "chrome-docker": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "chrome-debug-mcp:v1.0.3", "--headless"]
+      "args": ["run", "-i", "--rm", "chrome-debug-mcp:v1.0.4", "--headless"]
     },
     "chrome-docker-hybrid": {
       "command": "docker",
@@ -179,7 +182,7 @@ Most MCP clients (like Claude Desktop or any JSON-based config) use this structu
         "-i",
         "--rm",
         "--net=host",
-        "chrome-debug-mcp:v1.0.3",
+        "chrome-debug-mcp:v1.0.4",
         "--host",
         "127.0.0.1"
       ]
