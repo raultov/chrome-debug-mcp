@@ -93,13 +93,21 @@ impl ChromeInstanceManager {
     }
 
     fn log(&self, msg: &str) -> anyhow::Result<()> {
-        eprintln!("[ChromeManager:{}] {}", self.port, msg);
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("logs/debug.log")?;
+        writeln!(file, "[ChromeManager:{}] {}", self.port, msg)?;
         Ok(())
     }
 
     async fn is_port_open(&self) -> bool {
         let addr = format!("{}:{}", self.host, self.port);
-        TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(200)).is_ok()
+        let result =
+            TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).is_ok();
+        let _ = self.log(&format!("is_port_open: {} -> {}", addr, result));
+        result
     }
 
     async fn ensure_instance_impl(&mut self) -> anyhow::Result<()> {
@@ -169,7 +177,7 @@ impl ChromeInstanceManager {
             cmd.arg(format!("--proxy-server={}", proxy));
         }
 
-        let child = cmd
+        let mut child = cmd
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -181,19 +189,32 @@ impl ChromeInstanceManager {
                 )
             })?;
 
-        self.child = Some(child);
-
         // Wait for port to open
         let mut attempts = 0;
         while attempts < 50 {
             if self.is_port_open().await {
                 let _ = self.log("Chrome started successfully.");
+                self.child = Some(child);
                 return Ok(());
             }
+
+            // Check if the process exited early (e.g. delegated to existing session)
+            if let Ok(Some(_status)) = child.try_wait() {
+                let err_msg = if self.user_profile {
+                    "Chrome process exited immediately. When using --user-profile, Chrome cannot open a debugging port if there is already a running Chrome instance. You must either CLOSE ALL existing Chrome windows before starting the MCP, OR launch your main Chrome browser manually with the --remote-debugging-port flag."
+                } else {
+                    "Chrome process exited unexpectedly before opening the debugging port."
+                };
+                let err = anyhow::anyhow!(err_msg);
+                let _ = self.log(&err.to_string());
+                return Err(err);
+            }
+
             tokio::time::sleep(Duration::from_millis(200)).await;
             attempts += 1;
         }
 
+        self.child = Some(child);
         let err = anyhow::anyhow!("Chrome failed to start after multiple attempts");
         let _ = self.log(&format!("Error: {}", err));
         Err(err)

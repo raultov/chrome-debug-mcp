@@ -16,7 +16,7 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v1.0.4)
+## ✨ Features (v1.0.6)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
@@ -24,7 +24,8 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * **Isolated Profiles (Default)**: By default, every time the MCP server launches Chrome, it creates a **fresh, temporary user profile** in your system's temporary directory. This profile is completely independent of your main browser profile.
 * **Incognito-like Experience**: No cookies, history, saved passwords, or session data from your personal accounts are shared with the managed instance by default.
 * **Identity Protection**: Even if an LLM has full control over the browser, it cannot access your logged-in sessions (e.g., Google, GitHub, banking) or impersonate you unless explicitly authorized.
-* **User Profile Mode (v1.0.4)**: Use the `--user-profile` flag to launch Chrome using your **existing system profile**. This is useful when you want the LLM to work within your active sessions (cookies, saved logins, etc.) without having to re-authenticate on every site. **Use with caution as this provides the LLM access to your personal browser data.**
+* **User Profile Mode (v1.0.4+)**: Use the `--user-profile` flag to launch Chrome using your **existing system profile**. This is useful when you want the LLM to work within your active sessions (cookies, saved logins, etc.) without having to re-authenticate on every site. **Use with caution as this provides the LLM access to your personal browser data.**
+  * ⚠️ **Note on `--user-profile`**: Due to Chrome's singleton architecture, if your browser is already open, it will delegate the request and **fail to open the debugging port**. You must either **close all existing Chrome instances** before starting the MCP, or start your browser manually with the `--remote-debugging-port=9222` flag.
 
 **🔒 Local-Only Mode (v0.9.3)**
 * **Restricted Navigation**: Run the MCP server with the `--local` argument to restrict navigation to local addresses only: `localhost`, `127.0.0.1`, `192.168.x.x`, or addresses with the `.local` suffix. This is ideal for securely debugging local development environments without risking accidental navigation to external sites.
@@ -173,7 +174,7 @@ Most MCP clients (like Claude Desktop or any JSON-based config) use this structu
     },
     "chrome-docker": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "chrome-debug-mcp:v1.0.4", "--headless"]
+      "args": ["run", "-i", "--rm", "chrome-debug-mcp:v1.0.6", "--headless"]
     },
     "chrome-docker-hybrid": {
       "command": "docker",
@@ -182,7 +183,7 @@ Most MCP clients (like Claude Desktop or any JSON-based config) use this structu
         "-i",
         "--rm",
         "--net=host",
-        "chrome-debug-mcp:v1.0.4",
+        "chrome-debug-mcp:v1.0.6",
         "--host",
         "127.0.0.1"
       ]
