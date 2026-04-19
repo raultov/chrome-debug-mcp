@@ -9,3 +9,5 @@ GEMINI.md
 src/bin/
 proxy.json
 .gemini/
+.knot/  
+.fastembed_cache/
