@@ -6,15 +6,15 @@ use rust_mcp_sdk::{
 
 #[macros::mcp_tool(
     name = "get_console_logs",
-    description = "Retrieve console logs from the browser. This includes console.log/warn/error calls, exceptions, and network errors. Use this tool for troubleshooting page scripts and errors."
+    description = "Retrieves cached console messages including log, warning, error, info levels and uncaught exceptions. Side effects: optionally clears cache when 'clear' is true. Prerequisites: requires an active Chrome tab. Returns: JSON array of console messages with timestamp, level, and text. Use this to debug script errors, monitor page health, inspect exception traces. Alternatives: browser DevTools Console, error logging services."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct GetConsoleLogsTool {
-    /// If true, clears the internal console logs cache after retrieving the current logs. Use this to reset the state and only capture new logs going forward.
+    /// Clear console cache after returning logs. Constraints: boolean. Interactions: when true, subsequent calls only return new messages. Defaults to: false.
     #[serde(default)]
     pub clear: Option<bool>,
 
-    /// Optional level filter (e.g., "error", "warning", "info", "log").
+    /// Filter logs by severity level (case-insensitive). Constraints: 'error', 'warning', 'info', 'log', or similar CDP log level. Interactions: when provided, returns only matching level; empty returns all. Defaults to: None (no filtering).
     #[serde(default)]
     pub level_filter: Option<String>,
 }

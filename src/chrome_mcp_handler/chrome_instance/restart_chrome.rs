@@ -6,10 +6,11 @@ use rust_mcp_sdk::{
 
 #[macros::mcp_tool(
     name = "restart_chrome",
-    description = "Restarts the managed Chrome instance with remote debugging enabled. This tool can be used to start a new instance or restart an already existing one. If Chrome fails to start due to a missing executable, advise the user to set the CHROME_PATH environment variable for the MCP server."
+    description = "Stops and restarts the managed Chrome instance with remote debugging enabled, optionally configuring proxy. Side effects: destructive - terminates running Chrome process and all open tabs; closes debugging connection. Prerequisites: requires CHROME_PATH environment variable or chrome in PATH. Returns: restart success confirmation. Use this to reset browser state, apply proxy settings, recover from crashes. Alternatives: 'reload' to refresh page without restart, 'navigate' to load new content."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct RestartChromeTool {
+    /// Proxy server URL (e.g., 'http://proxy.example.com:8080'). Constraints: valid proxy URL with protocol and port. Interactions: applied to new Chrome instance; requires 'enable_proxy_auth' for authenticated proxies. Defaults to: None (no proxy).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy_server: Option<String>,
 }

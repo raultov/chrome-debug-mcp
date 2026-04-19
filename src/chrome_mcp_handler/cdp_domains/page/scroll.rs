@@ -7,17 +7,17 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "scroll",
-    description = "Scrolls the page by a specific amount (pixels or pages) or to a specific element."
+    description = "Scrolls the page by pixel offset, viewport pages, or to a specific element using CSS selector. Side effects: modifies DOM scroll position (observable but reversible). Prerequisites: requires an active Chrome tab with content. Returns: scroll completion confirmation. Use this to navigate within long pages or bring elements into view. Alternatives: 'click_element' to trigger scroll by clicking, 'evaluate_js' for custom scroll logic."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct ScrollTool {
-    /// Optional: Number of pixels to scroll horizontally (positive for right, negative for left)
+    /// Horizontal scroll distance in pixels. Constraints: integer (positive=right, negative=left). Interactions: ignored if 'selector' is provided; combined with 'y' for diagonal scrolling. Defaults to: 0 (no horizontal scroll).
     pub x: Option<i32>,
-    /// Optional: Number of pixels to scroll vertically (positive for down, negative for up)
+    /// Vertical scroll distance in pixels. Constraints: integer (positive=down, negative=up). Interactions: ignored if 'selector' or 'pages' is provided; overridden by 'pages'. Defaults to: 0 (no vertical scroll).
     pub y: Option<i32>,
-    /// Optional: Number of viewport heights to scroll vertically
+    /// Number of viewport heights to scroll vertically. Constraints: positive float (e.g., 1.5 = 1.5× viewport height). Interactions: takes precedence over 'y' parameter if both provided; ignored if 'selector' provided. Defaults to: None.
     pub pages: Option<f64>,
-    /// Optional: CSS selector of the element to scroll into view
+    /// CSS selector of element to scroll into view. Constraints: valid CSS selector string. Interactions: takes precedence over 'x', 'y', 'pages' if provided; fails if element not found. Defaults to: None.
     pub selector: Option<String>,
 }
 

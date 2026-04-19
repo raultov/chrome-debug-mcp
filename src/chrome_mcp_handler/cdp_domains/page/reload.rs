@@ -5,7 +5,10 @@ use rust_mcp_sdk::{
 };
 use serde_json::json;
 
-#[macros::mcp_tool(name = "reload", description = "Reload the current page")]
+#[macros::mcp_tool(
+    name = "reload",
+    description = "Reloads the current page, discarding all unsaved changes and re-fetching resources from the server. Side effects: destructive of unsaved state; clears dynamic DOM state. Prerequisites: requires an active Chrome tab. Returns: reload confirmation. Use this to refresh page content or reset to initial load state. Alternatives: 'navigate' to load a different URL, 'pause_on_load' to debug reload execution."
+)]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct ReloadTool {}
 

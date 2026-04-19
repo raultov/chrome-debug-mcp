@@ -6,7 +6,7 @@ use rust_mcp_sdk::{
 
 #[macros::mcp_tool(
     name = "stop_chrome",
-    description = "Stops the managed Chrome instance. This tool should be used to ensure no zombie Chrome instances are left running after finishing operations with the MCP server."
+    description = "Gracefully terminates the managed Chrome instance and closes all debugging connections. Side effects: destructive - kills Chrome process; all open tabs closed; unsaved data lost. Prerequisites: Chrome instance must be running. Returns: termination success confirmation. Use this to clean up resources, prevent zombie processes, or end debugging session. Alternatives: 'restart_chrome' to restart instead of stop."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct StopChromeTool {}

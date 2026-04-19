@@ -7,15 +7,15 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "capture_screenshot",
-    description = "Capture a screenshot of the current page. Returns a base64 encoded PNG image."
+    description = "Captures a visual representation of the current page viewport or entire page as a base64 encoded image. Side effects: none (read-only). Prerequisites: requires an active Chrome tab. Returns: base64 encoded image in specified format. Use this to visually verify UI state, layout, or rendering. Alternatives: 'inspect_dom' for raw HTML structure, 'get_performance_metrics' for rendering metrics."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct CaptureScreenshotTool {
-    /// Optional: Image format. Valid options: "png", "jpeg", "webp". Defaults to "png".
+    /// Output image format. Constraints: must be 'png', 'jpeg', or 'webp'. Interactions: 'quality' applies only to 'jpeg' and 'webp' formats. Defaults to: "png".
     pub format: Option<String>,
-    /// Optional: JPEG or WEBP compression quality (0-100).
+    /// Compression quality (0-100, higher=better quality). Constraints: integer between 0 and 100. Interactions: only applies when 'format' is 'jpeg' or 'webp'; ignored for 'png'. Defaults to: 100.
     pub quality: Option<u32>,
-    /// Optional: Capture the full page layout (beyond the visible viewport). Defaults to false.
+    /// Capture the entire page beyond visible viewport. Constraints: boolean value. Interactions: if true, captures full page height; if false, captures only visible area. Defaults to: false.
     pub full_page: Option<bool>,
 }
 

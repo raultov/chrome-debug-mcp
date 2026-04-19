@@ -6,14 +6,14 @@ use rust_mcp_sdk::{
 
 #[macros::mcp_tool(
     name = "get_custom_events",
-    description = "EXPERIMENTAL: Retrieve events captured from the browser that are not handled by other specialized listeners (like network or console). Use this to see results of custom commands that produce events (e.g., Target.targetCreated)."
+    description = "EXPERIMENTAL: Retrieves unhandled CDP events from domains not covered by specialized listeners (network, console, etc.). Side effects: none (read-only cache access). Prerequisites: requires active Chrome connection with send_cdp_command or custom domain listeners active. Returns: JSON array of custom events with method, parameters, and timestamp. Use this to see Target, Debugger, or other domain events. Alternatives: domain-specific listeners (get_network_logs, get_console_logs)."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct GetCustomEventsTool {
-    /// Optional: Filter events by method name (e.g., 'Target.targetCreated').
+    /// Filter events by CDP method name (case-sensitive). Constraints: string matching format 'Domain.eventName'. Interactions: when omitted, returns all events. Defaults to: None (no filtering).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter_method: Option<String>,
-    /// Optional: Limit the number of events returned (default 100).
+    /// Maximum number of events to return. Constraints: positive integer (0 = unlimited, clamped to cache size). Interactions: limits result set size. Defaults to: 100.
     #[serde(default = "default_limit")]
     pub limit: u32,
 }

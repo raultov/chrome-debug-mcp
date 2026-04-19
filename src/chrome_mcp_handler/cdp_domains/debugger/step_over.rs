@@ -6,7 +6,7 @@ use rust_mcp_sdk::{
 
 #[macros::mcp_tool(
     name = "step_over",
-    description = "Step over the current line of code in the debugger"
+    description = "Executes the current line of code without entering function calls, pausing at the next line. Side effects: advances debugger execution state. Prerequisites: requires an active, paused debugger session. Returns: confirmation of step execution. Use this to skip function internals during debugging. Alternatives: use 'resume' to continue full execution, 'step_over' enters functions, or 'evaluate_on_call_frame' to inspect state without stepping."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct StepOverTool {}

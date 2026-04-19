@@ -7,10 +7,11 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "evaluate_on_call_frame",
-    description = "Evaluate an expression in the context of the currently paused debugger call frame"
+    description = "Evaluates JavaScript expressions within the scope of a paused call frame, accessing local variables and call stack. Side effects: read-only by default; can modify state if expression includes mutations. Prerequisites: requires debugger to be paused at a breakpoint with active call frame. Returns: expression result with type and value. Use this to inspect variables and call stack during debugging. Alternatives: 'evaluate_js' for global scope evaluation, 'step_over' to advance without evaluation."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct EvaluateOnCallFrameTool {
+    /// JavaScript expression to evaluate in call frame scope. Constraints: valid JavaScript accessing local/closure variables. Interactions: requires active paused debugger session; has access to function parameters and local variables. Defaults to: None (required).
     pub expression: String,
 }
 

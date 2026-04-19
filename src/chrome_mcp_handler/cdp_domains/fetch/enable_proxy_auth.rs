@@ -10,14 +10,18 @@ use tokio_stream::StreamExt;
 
 #[macros::mcp_tool(
     name = "enable_proxy_auth",
-    description = "Enables proxy authentication using the Fetch domain. Call this after restarting Chrome with a proxy-server if your proxy requires authentication. It maintains active listening for up to 30 seconds of inactivity before automatically unhooking itself."
+    description = "Activates proxy authentication interception via Fetch domain, supplying credentials for authenticated proxies. Side effects: starts background event listener that auto-terminates after 30s inactivity; initiates pre-warming navigation. Auth requirements: username and password credentials required. Prerequisites: Chrome must be started with proxy-server flag. Rate limits: 30-second timeout per inactivity period. Returns: confirmation of proxy auth activation. Use this after 'restart_chrome' with proxy settings. Alternatives: manual proxy configuration in system settings."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct EnableProxyAuthTool {
+    /// Proxy authentication username. Constraints: non-empty string. Interactions: paired with 'password'; sent to proxy server on auth challenge.
     pub username: String,
+    /// Proxy authentication password. Constraints: non-empty string. Interactions: paired with 'username'; sent to proxy server on auth challenge.
     pub password: String,
+    /// Resource type to intercept. Constraints: 'Document', 'Image', 'Script', 'XHR', etc. (Chrome CDP resource types). Interactions: filters which request types trigger auth handling. Defaults to: "Document".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_type: Option<String>,
+    /// URL to navigate for proxy pre-warming. Constraints: valid URL (http/https). Interactions: navigated after auth setup to trigger proxy auth flow. Defaults to: "http://api.ipify.org?format=json".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prewarm_url: Option<String>,
 }

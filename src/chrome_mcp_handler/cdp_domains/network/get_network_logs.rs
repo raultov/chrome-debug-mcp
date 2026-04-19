@@ -7,31 +7,31 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "get_network_logs",
-    description = "Retrieve intercepted network requests (REST) and WebSocket frames with optional advanced filtering. Use this tool to inspect API calls, page assets, and WebSocket traffic. It is highly recommended to use the available filters to avoid flooding the context window with unnecessary network data."
+    description = "Retrieves intercepted HTTP/REST requests and WebSocket frames from network activity cache with filtering. Side effects: optionally clears cached logs when 'clear' is true. Prerequisites: requires active Chrome tab with network monitoring enabled. Returns: JSON array of requests/WebSocket frames with optional full details. Rate limits: none. Use this to audit API calls, debug network issues, inspect WebSocket traffic. Alternatives: browser DevTools Network tab, HAR file export."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct GetNetworkLogsTool {
-    /// If true, clears the internal network logs cache after retrieving the current logs. Use this to reset the state and only capture new traffic going forward.
+    /// Clear network cache after returning logs. Constraints: boolean. Interactions: when true, subsequent calls return only new traffic. Defaults to: false.
     #[serde(default)]
     pub clear: Option<bool>,
 
-    /// Select the type of network traffic to retrieve. Valid options: "rest" (only REST/HTTP requests), "websocket" (only WebSocket frames), or "both" (default).
+    /// Traffic type to include. Constraints: 'rest', 'websocket', or 'both' (case-insensitive). Interactions: limits results to specified type. Defaults to: "both".
     #[serde(default)]
     pub type_filter: Option<String>,
 
-    /// Filter by URL content. Only requests or WebSocket connections whose URL contains this exact string (case-insensitive) will be returned. Leave empty to disable URL filtering.
+    /// Partial URL match (case-insensitive). Constraints: non-empty string. Interactions: filters both REST and WebSocket URLs; empty string disables filtering. Defaults to: None (no URL filtering).
     #[serde(default)]
     pub url_filter: Option<String>,
 
-    /// Filter WebSocket frames by their transmission direction. Valid options: "sent" (client to server), "received" (server to client), or "both" (default).
+    /// WebSocket frame direction filter. Constraints: 'sent', 'received', or 'both'. Interactions: applies only when type_filter includes 'websocket'. Defaults to: "both".
     #[serde(default)]
     pub ws_direction_filter: Option<String>,
 
-    /// Filter WebSocket frames by their payload content. Only frames whose payload data contains this exact string (case-insensitive) will be returned.
+    /// WebSocket payload substring match (case-insensitive). Constraints: non-empty string. Interactions: applies only when type_filter includes 'websocket'; filters by payload content. Defaults to: None (no content filtering).
     #[serde(default)]
     pub ws_content_filter: Option<String>,
 
-    /// If true (default), returns full details including request/response headers, response bodies for REST, and full payloads for WebSockets. If false, returns a summary containing only the URL, method, status, statusText, and resourceType (or payload length for WS). Set to false when you just need to survey what requests were made without downloading all their contents.
+    /// Include full request/response details. Constraints: boolean. Interactions: when false, returns summary only (URL, method, status); when true, includes headers, bodies. Defaults to: true.
     #[serde(default)]
     pub include_details: Option<bool>,
 }

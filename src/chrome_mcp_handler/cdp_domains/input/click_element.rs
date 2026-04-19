@@ -7,11 +7,11 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "click_element",
-    description = "Clicks on an element in the DOM using a CSS selector"
+    description = "Triggers a native mouse click event on a DOM element identified by CSS selector, executing click handlers and form submissions. Side effects: may trigger page navigation, form submission, or modify DOM state. Prerequisites: element must exist and be visible (getBoundingClientRect must return valid coordinates). Returns: success confirmation with click coordinates. Use this to interact with buttons, links, checkboxes. Alternatives: 'fill_input' for text input, 'evaluate_js' for complex interactions."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct ClickElementTool {
-    /// CSS selector for the element to click
+    /// CSS selector identifying the target element. Constraints: valid CSS selector string matching a single DOM element. Interactions: must resolve to exactly one visible element or operation fails. Defaults to: None (required).
     pub selector: String,
 }
 

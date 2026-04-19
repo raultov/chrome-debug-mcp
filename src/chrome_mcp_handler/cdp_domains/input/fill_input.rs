@@ -7,13 +7,13 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "fill_input",
-    description = "Fills an input field in the DOM with the specified text. It focuses the element using a CSS selector and then simulates native typing."
+    description = "Focuses an input field via CSS selector and inserts text using native input simulation, triggering input/change events. Side effects: modifies DOM input value; triggers input/change event handlers. Prerequisites: element must exist, be visible, and be an input/textarea or contenteditable element. Returns: success confirmation. Use this to populate form fields, search boxes, text areas. Alternatives: 'evaluate_js' for direct value assignment without events, 'click_element' to focus manually."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct FillInputTool {
-    /// CSS selector for the input element to fill
+    /// CSS selector identifying the input element. Constraints: valid CSS selector matching an input/textarea/contenteditable element. Interactions: element must be focusable and writable. Defaults to: None (required).
     pub selector: String,
-    /// The text to insert into the input field
+    /// Text content to insert. Constraints: any string (special chars escaped automatically). Interactions: replaces any existing text after focus; triggers input/change events. Defaults to: None (required).
     pub text: String,
 }
 

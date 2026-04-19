@@ -7,10 +7,11 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "evaluate_js",
-    description = "Evaluate JavaScript in the current Chrome tab"
+    description = "Executes arbitrary JavaScript code in the page context, returning evaluated results as JSON-serializable values. Side effects: may modify DOM, state, or trigger network requests. Prerequisites: requires an active Chrome tab; script context must allow execution. Returns: JSON-serialized return value (or error if promise rejected). Use this for dynamic inspection, DOM manipulation, complex interactions. Alternatives: 'inspect_dom' for read-only DOM queries, 'click_element' for UI interactions."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct EvaluateJsTool {
+    /// JavaScript code expression to execute. Constraints: valid JavaScript (single expression or IIFE). Interactions: automatically awaits promises; 'returnByValue' returns serialized results. Defaults to: None (required).
     pub expression: String,
 }
 

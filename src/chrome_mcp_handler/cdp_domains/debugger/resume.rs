@@ -4,7 +4,10 @@ use rust_mcp_sdk::{
     schema::{CallToolError, CallToolRequestParams, CallToolResult},
 };
 
-#[macros::mcp_tool(name = "resume", description = "Resume execution in the debugger")]
+#[macros::mcp_tool(
+    name = "resume",
+    description = "Continues full execution of the debugger from current breakpoint. Side effects: advances code execution until next breakpoint or completion. Prerequisites: requires an active, paused debugger session. Returns: confirmation of resume command. Use this to continue program flow after inspection. Alternatives: 'step_over' or 'step_out' for single-step execution."
+)]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct ResumeTool {}
 

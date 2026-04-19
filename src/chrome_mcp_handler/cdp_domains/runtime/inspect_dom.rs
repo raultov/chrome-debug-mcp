@@ -7,15 +7,15 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "inspect_dom",
-    description = "Fetch the entire HTML of the current document or a snippet around a search query"
+    description = "Retrieves the complete HTML document or a contextual snippet around a search query. Side effects: none (read-only). Prerequisites: requires an active Chrome tab with loaded DOM. Returns: full HTML or snippet with context markers. Use this to inspect page structure, find elements by text, or verify rendering. Alternatives: 'evaluate_js' for complex DOM queries, 'capture_screenshot' for visual verification."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct InspectDomTool {
-    /// Optional: Search for this specific text within the DOM
+    /// Text pattern to search for in the DOM (case-sensitive). Constraints: any string. Interactions: when provided, returns context snippet instead of full HTML. Defaults to: None (returns full HTML if omitted).
     pub query: Option<String>,
-    /// Optional: Number of characters to include before the match (default 200)
+    /// Characters to include before the match. Constraints: non-negative integer. Interactions: only applies if 'query' provided. Defaults to: 200.
     pub before: Option<u32>,
-    /// Optional: Number of characters to include after the match (default 200)
+    /// Characters to include after the match. Constraints: non-negative integer. Interactions: only applies if 'query' provided. Defaults to: 200.
     pub after: Option<u32>,
 }
 

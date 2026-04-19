@@ -7,14 +7,19 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "set_breakpoint",
-    description = "Set a debugger breakpoint at a specific script, line and column"
+    description = "Sets a debugger breakpoint at a specific location, pausing execution when reached. Side effects: modifies debugger state (breakpoint added until removed). Prerequisites: requires an active Chrome tab; target script must be loaded. Returns: breakpoint identifier and location confirmation. Use this to debug specific code paths. Alternatives: 'pause_on_load' for early script execution, 'search_scripts' to find scripts by pattern."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct SetBreakpointTool {
+    /// Script hash to identify the target script. Constraints: one of 'script_hash', 'script_id', or 'url' must be provided. Defaults to: None.
     pub script_hash: Option<String>,
+    /// Script ID (from Debugger.scriptParsed event). Constraints: one of 'script_hash', 'script_id', or 'url' must be provided. Interactions: mutually exclusive with 'script_hash' and 'url' (first match wins). Defaults to: None.
     pub script_id: Option<String>,
+    /// Script URL to match. Constraints: one of 'script_hash', 'script_id', or 'url' must be provided. Interactions: mutually exclusive with 'script_hash' and 'script_id'. Defaults to: None.
     pub url: Option<String>,
+    /// Line number where breakpoint is set (0-indexed). Constraints: non-negative integer, must be within script bounds. Interactions: required parameter; combined with 'column_number' to pinpoint exact location.
     pub line_number: u32,
+    /// Column number within the line. Constraints: non-negative integer. Interactions: optional; narrower precision if provided. Defaults to: start of line (0).
     pub column_number: Option<u32>,
 }
 

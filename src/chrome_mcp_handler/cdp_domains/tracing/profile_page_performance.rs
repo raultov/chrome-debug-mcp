@@ -9,19 +9,19 @@ use tokio::sync::mpsc;
 
 #[macros::mcp_tool(
     name = "profile_page_performance",
-    description = "Record and analyze a performance trace of the page. It automatically calculates Core Web Vitals (FCP, LCP, DCL, Load) and identifies the top Long Tasks (main thread blocking operations). You can optionally reload the page with cache disabled to simulate a cold start."
+    description = "Records a performance trace of page execution, calculating Core Web Vitals (FCP, LCP, DCL, Load) and identifying Long Tasks (>50ms blocking). Side effects: may temporarily disable cache; impacts page memory/CPU. Prerequisites: requires an active Chrome tab; trace recording uses background bandwidth. Returns: JSON with vitals, blocking time, and top 5 long tasks. Use this to optimize performance, identify bottlenecks, measure cold starts. Alternatives: browser DevTools Performance tab, real user monitoring (RUM)."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct ProfilePagePerformanceTool {
-    /// Duration to record the trace in milliseconds. Defaults to 3000ms. Keep it between 1000 and 10000.
+    /// Recording duration in milliseconds. Constraints: integer between 500 and 15000. Interactions: longer duration captures more data; use 3000-5000 for typical pages. Defaults to: 3000.
     #[serde(default)]
     pub duration_ms: Option<u64>,
 
-    /// Action to perform right after starting the trace. Can be "none" (default) or "reload".
+    /// Action to trigger during tracing. Constraints: 'none' or 'reload'. Interactions: 'reload' restarts page recording from initial load (useful with disable_cache=true). Defaults to: "none".
     #[serde(default)]
     pub action: Option<String>,
 
-    /// If true, disables the network cache before profiling and restores it after. Useful with action="reload" to simulate a cold start.
+    /// Disable network cache during trace. Constraints: boolean. Interactions: when true with action='reload', simulates cold start; cache restored after profiling. Defaults to: false.
     #[serde(default)]
     pub disable_cache: Option<bool>,
 }

@@ -6,13 +6,13 @@ use rust_mcp_sdk::{
 
 #[macros::mcp_tool(
     name = "send_cdp_command",
-    description = "EXPERIMENTAL: Send a raw CDP command to the browser. Use ONLY if existing specialized tools (like navigate, click_element, etc.) do not satisfy your needs. Requires knowledge of the Chrome DevTools Protocol (CDP)."
+    description = "EXPERIMENTAL: Sends raw Chrome DevTools Protocol (CDP) commands to the browser for advanced use cases not covered by specialized tools. Side effects: depends on command; may modify page state, DOM, or trigger navigation. Auth requirements: subject to local-only restrictions if enabled (Page.navigate checked). Prerequisites: requires knowledge of CDP protocol; active Chrome connection. Returns: raw CDP command response as JSON. Use this only when specialized tools inadequate. Alternatives: use domain-specific tools (navigate, click_element, evaluate_js)."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct SendCdpCommandTool {
-    /// The CDP method name (e.g., 'DOM.getDocument').
+    /// CDP protocol method name (e.g., 'DOM.getDocument', 'Runtime.evaluate'). Constraints: valid CDP domain.method format. Interactions: method must be recognized by Chrome protocol version.
     pub method: String,
-    /// A JSON string representing the parameters for the CDP command (e.g., '{"url": "https://example.com"}'). Omit or provide '{}' if no parameters are needed.
+    /// JSON-formatted parameters for the CDP command. Constraints: valid JSON object string. Interactions: Page.navigate URLs subject to local-only restrictions; empty string or '{}' for no parameters. Defaults to: None.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<String>,
 }
