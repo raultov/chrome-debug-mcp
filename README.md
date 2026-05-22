@@ -16,7 +16,7 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v1.0.6)
+## ✨ Features (v1.0.8)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
@@ -174,7 +174,7 @@ Most MCP clients (like Claude Desktop or any JSON-based config) use this structu
     },
     "chrome-docker": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "chrome-debug-mcp:v1.0.6", "--headless"]
+      "args": ["run", "-i", "--rm", "chrome-debug-mcp:v1.0.8", "--headless"]
     },
     "chrome-docker-hybrid": {
       "command": "docker",
@@ -183,7 +183,7 @@ Most MCP clients (like Claude Desktop or any JSON-based config) use this structu
         "-i",
         "--rm",
         "--net=host",
-        "chrome-debug-mcp:v1.0.6",
+        "chrome-debug-mcp:v1.0.8",
         "--host",
         "127.0.0.1"
       ]

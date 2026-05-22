@@ -148,7 +148,6 @@ impl ChromeInstanceManager {
         let chrome_path = Self::get_chrome_path();
         let mut cmd = Command::new(&chrome_path);
         cmd.arg(format!("--remote-debugging-port={}", self.port))
-            .arg("--disable-gpu")
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
             .arg("--disable-session-crashed-bubble")
