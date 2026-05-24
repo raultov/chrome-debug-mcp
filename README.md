@@ -16,7 +16,7 @@ Using `cdp-lite` underneath, this MCP server directly hooks into the browser avo
 
 ---
 
-## ✨ Features (v1.0.8)
+## ✨ Features (v1.0.9)
 
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
@@ -27,19 +27,14 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * **User Profile Mode (v1.0.4+)**: Use the `--user-profile` flag to launch Chrome using your **existing system profile**. This is useful when you want the LLM to work within your active sessions (cookies, saved logins, etc.) without having to re-authenticate on every site. **Use with caution as this provides the LLM access to your personal browser data.**
   * ⚠️ **Note on `--user-profile`**: Due to Chrome's singleton architecture, if your browser is already open, it will delegate the request and **fail to open the debugging port**. You must either **close all existing Chrome instances** before starting the MCP, or start your browser manually with the `--remote-debugging-port=9222` flag.
 
-**🔒 Local-Only Mode (v0.9.3)**
-* **Restricted Navigation**: Run the MCP server with the `--local` argument to restrict navigation to local addresses only: `localhost`, `127.0.0.1`, `192.168.x.x`, or addresses with the `.local` suffix. This is ideal for securely debugging local development environments without risking accidental navigation to external sites.
-* **Clear Error Messaging**: If a navigation to an external address is attempted in local-only mode, the server returns a descriptive error explaining the restriction and how to disable it.
-
-**🛠️ Custom CDP Commands (v0.9.0)**
-* `send_cdp_command`: **EXPERIMENTAL**. Send any raw CDP command directly to the browser. This serves as a powerful fallback for any domain or command not yet natively implemented in specialized tools.
-* `get_custom_events`: Retrieve a list of events captured from the browser that are not handled by other specialized listeners (like network or console). Essential for observing the side-effects of custom commands.
-* **Broad Event Capture**: Automatically captures events from over 20+ domains (Target, DOM, CSS, Storage, etc.) and stores them in a rolling buffer for later inspection.
-
 **🚀 Chrome Instance Management (v1.0.0)**
 * **Isolated Profiles**: Launches Chrome using a fresh, temporary profile by default, ensuring it doesn't share cookies, passwords, or session data with your main browser.
 * **User Profile Support (v1.0.4)**: Optionally use `--user-profile` to leverage your existing browser sessions and cookies.
+* **Dynamic Port Management (v1.0.9)**: Automatically detects if the default port (9222) is in use. 
+  * If used by another managed `chrome-debug-mcp` instance, it **automatically finds a new available port** to avoid collisions.
+  * If used by a user-started Chrome instance, it **automatically attaches** to it instead of spawning a new one.
 * **Docker & Headless Support**: Full compatibility with Docker environments. Use the `--headless` flag to run Chrome without a GUI inside containers.
+
 * **Remote/Host Connection**: Use the `--host` argument to connect to a Chrome instance running on a different machine or the host machine (e.g., `--host host.docker.internal` from inside a container).
 * **Optional Automation Infobar**: Add the `--enable-automation` flag to explicitly show the native "Chrome is being controlled by automated test software" message. By default, this is disabled for stealthier interaction.
 * **Proxy Support**: `restart_chrome` now accepts an optional `proxy_server` argument to launch Chrome routing traffic through a proxy.
@@ -174,7 +169,7 @@ Most MCP clients (like Claude Desktop or any JSON-based config) use this structu
     },
     "chrome-docker": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "chrome-debug-mcp:v1.0.8", "--headless"]
+      "args": ["run", "-i", "--rm", "chrome-debug-mcp:v1.0.9", "--headless"]
     },
     "chrome-docker-hybrid": {
       "command": "docker",
@@ -183,7 +178,7 @@ Most MCP clients (like Claude Desktop or any JSON-based config) use this structu
         "-i",
         "--rm",
         "--net=host",
-        "chrome-debug-mcp:v1.0.8",
+        "chrome-debug-mcp:v1.0.9",
         "--host",
         "127.0.0.1"
       ]

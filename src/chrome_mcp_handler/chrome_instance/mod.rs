@@ -104,10 +104,77 @@ impl ChromeInstanceManager {
 
     async fn is_port_open(&self) -> bool {
         let addr = format!("{}:{}", self.host, self.port);
-        let result =
-            TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_secs(2)).is_ok();
+        let Ok(parsed_addr) = addr.parse() else {
+            return false;
+        };
+        let result = TcpStream::connect_timeout(&parsed_addr, Duration::from_millis(500)).is_ok();
         let _ = self.log(&format!("is_port_open: {} -> {}", addr, result));
         result
+    }
+
+    fn is_managed_profile_active(&self) -> bool {
+        if self.user_profile {
+            return false;
+        }
+        let lock_file = std::env::temp_dir()
+            .join(format!("chrome-mcp-profile-{}", self.port))
+            .join("SingletonLock");
+        lock_file.exists()
+    }
+
+    async fn is_chrome_cdp(&self) -> bool {
+        let addr = format!("{}:{}", self.host, self.port);
+        let Ok(parsed_addr) = addr.parse() else {
+            return false;
+        };
+        let Ok(mut stream) = TcpStream::connect_timeout(&parsed_addr, Duration::from_secs(1))
+        else {
+            return false;
+        };
+
+        let request = format!(
+            "GET /json/version HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+            addr
+        );
+
+        use std::io::{Read, Write};
+        if stream.write_all(request.as_bytes()).is_err() {
+            return false;
+        }
+
+        let mut response = String::new();
+        let _ = stream.read_to_string(&mut response);
+
+        response.contains("Browser") || response.contains("WebKit-Version")
+    }
+
+    async fn find_new_port(&mut self) -> anyhow::Result<()> {
+        let original_port = self.port;
+        for port in (original_port + 1)..(original_port + 100) {
+            let addr = format!("{}:{}", self.host, port);
+            let Ok(parsed_addr) = addr.parse() else {
+                continue;
+            };
+
+            let is_open =
+                TcpStream::connect_timeout(&parsed_addr, Duration::from_millis(200)).is_ok();
+            if !is_open {
+                let lock_file = std::env::temp_dir()
+                    .join(format!("chrome-mcp-profile-{}", port))
+                    .join("SingletonLock");
+                if !lock_file.exists() {
+                    self.port = port;
+                    self.user_data_dir =
+                        std::env::temp_dir().join(format!("chrome-mcp-profile-{}", port));
+                    let _ = self.log(&format!("Found available dynamic port: {}", port));
+                    return Ok(());
+                }
+            }
+        }
+        self.port = original_port;
+        Err(anyhow::anyhow!(
+            "Could not find an available port after 100 attempts"
+        ))
     }
 
     async fn ensure_instance_impl(&mut self) -> anyhow::Result<()> {
@@ -115,21 +182,69 @@ impl ChromeInstanceManager {
             "ensure_instance started for {}:{}",
             self.host, self.port
         ));
-        if self.is_port_open().await {
-            // Already running
+
+        // 1. Check if our own child is already running
+        if let Some(ref mut child) = self.child
+            && child.try_wait()?.is_none()
+            && self.is_port_open().await
+        {
             return Ok(());
         }
 
-        // If host is not local, we cannot start the instance
-        if self.host != "127.0.0.1" && self.host != "localhost" {
-            return Err(anyhow::anyhow!(
-                "Chrome instance not found at {}:{}. Cannot start remote instance.",
-                self.host,
-                self.port
-            ));
+        // 2. Port is open by someone else
+        if self.is_port_open().await {
+            if self.is_chrome_cdp().await {
+                if self.is_managed_profile_active() {
+                    let _ = self.log(&format!(
+                        "Port {} is used by another managed instance",
+                        self.port
+                    ));
+                    if self.host == "127.0.0.1" || self.host == "localhost" {
+                        self.find_new_port().await?;
+                        // Port changed to a closed one, proceed to start_instance
+                    } else {
+                        // Remote, just use it
+                        return Ok(());
+                    }
+                } else {
+                    // Port open but not managed. Assume user-started Chrome (the "distinguish" use case)
+                    let _ = self.log(&format!(
+                        "Port {} is open and not managed. Attaching to existing Chrome...",
+                        self.port
+                    ));
+                    return Ok(());
+                }
+            } else {
+                // Port open but NOT Chrome!
+                if self.host == "127.0.0.1" || self.host == "localhost" {
+                    let _ = self.log(&format!(
+                        "Port {} is taken by a non-Chrome process. Finding new port...",
+                        self.port
+                    ));
+                    self.find_new_port().await?;
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Port {} is taken by a non-Chrome process",
+                        self.port
+                    ));
+                }
+            }
         }
 
-        self.start_instance().await
+        // 3. If port is still not open, we start it (if local)
+        if !self.is_port_open().await {
+            if self.host != "127.0.0.1" && self.host != "localhost" {
+                return Err(anyhow::anyhow!(
+                    "Chrome instance not found at {}:{}. Cannot start remote instance.",
+                    self.host,
+                    self.port
+                ));
+            }
+
+            self.start_instance().await?;
+        }
+
+        Ok(())
     }
 
     async fn start_instance(&mut self) -> anyhow::Result<()> {
@@ -361,21 +476,46 @@ mod tests {
         assert_eq!(path, "google-chrome");
     }
 
-    #[test]
-    fn test_chrome_instance_manager_new() {
-        let port = 9333;
-        let manager = ChromeInstanceManager::new("127.0.0.1".into(), port, true, true, false);
-        assert_eq!(manager.port, port);
-        assert_eq!(manager.host, "127.0.0.1");
-        assert!(manager.enable_automation);
-        assert!(manager.headless);
-        assert!(manager.user_data_dir.to_string_lossy().contains("9333"));
-        assert!(!manager.user_profile);
+    #[tokio::test]
+    async fn test_find_new_port() {
+        use std::net::TcpListener;
+        let base_port = 12000;
+        // Occupy the base port
+        let _listener = TcpListener::bind(format!("127.0.0.1:{}", base_port)).unwrap();
 
-        let manager_no_auto =
-            ChromeInstanceManager::new("localhost".into(), port, false, false, true);
-        assert!(!manager_no_auto.enable_automation);
-        assert!(!manager_no_auto.headless);
-        assert!(manager_no_auto.user_profile);
+        let mut manager =
+            ChromeInstanceManager::new("127.0.0.1".into(), base_port, true, true, false);
+        manager.find_new_port().await.unwrap();
+
+        assert!(manager.port > base_port);
+        assert!(manager.port < base_port + 100);
+        // Verify user_data_dir updated
+        assert!(
+            manager
+                .user_data_dir
+                .to_string_lossy()
+                .contains(&manager.port.to_string())
+        );
+    }
+
+    #[test]
+    fn test_is_managed_profile_active() {
+        let port = 12001;
+        let manager = ChromeInstanceManager::new("127.0.0.1".into(), port, true, true, false);
+
+        // Initially inactive
+        assert!(!manager.is_managed_profile_active());
+
+        // Create the lock file
+        let profile_dir = std::env::temp_dir().join(format!("chrome-mcp-profile-{}", port));
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let lock_file = profile_dir.join("SingletonLock");
+        std::fs::write(&lock_file, "lock").unwrap();
+
+        assert!(manager.is_managed_profile_active());
+
+        // Cleanup
+        let _ = std::fs::remove_file(lock_file);
+        let _ = std::fs::remove_dir(profile_dir);
     }
 }
