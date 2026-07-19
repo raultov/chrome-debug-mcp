@@ -93,11 +93,16 @@ impl ChromeInstanceManager {
     }
 
     fn log(&self, msg: &str) -> anyhow::Result<()> {
+        self.log_to(std::path::Path::new("logs"), msg)
+    }
+
+    fn log_to(&self, base: &std::path::Path, msg: &str) -> anyhow::Result<()> {
         use std::io::Write;
+        std::fs::create_dir_all(base)?;
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open("logs/debug.log")?;
+            .open(base.join("debug.log"))?;
         writeln!(file, "[ChromeManager:{}] {}", self.port, msg)?;
         Ok(())
     }
@@ -124,28 +129,46 @@ impl ChromeInstanceManager {
 
     async fn is_chrome_cdp(&self) -> bool {
         let addr = format!("{}:{}", self.host, self.port);
-        let Ok(parsed_addr) = addr.parse() else {
-            return false;
+
+        let probe = async {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+            let mut stream = tokio::net::TcpStream::connect(&addr).await.ok()?;
+
+            let request = format!(
+                "GET /json/version HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+                addr
+            );
+            stream.write_all(request.as_bytes()).await.ok()?;
+
+            // Chrome >= 148 ignores `Connection: close` and keeps the socket open,
+            // so we cannot read until EOF. Instead, we stop as soon as the
+            // identifying markers appear or the global timeout fires.
+            let mut response = String::new();
+            let mut buf = [0u8; 1024];
+            loop {
+                match stream.read(&mut buf).await {
+                    Ok(0) => break, // EOF (older Chrome does close)
+                    Ok(n) => {
+                        response.push_str(&String::from_utf8_lossy(&buf[..n]));
+                        if response.contains("Browser") || response.contains("WebKit-Version") {
+                            return Some(true);
+                        }
+                        if response.len() > 64 * 1024 {
+                            break; // absurdly large response: not DevTools
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            Some(response.contains("Browser") || response.contains("WebKit-Version"))
         };
-        let Ok(mut stream) = TcpStream::connect_timeout(&parsed_addr, Duration::from_secs(1))
-        else {
-            return false;
-        };
 
-        let request = format!(
-            "GET /json/version HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-            addr
-        );
-
-        use std::io::{Read, Write};
-        if stream.write_all(request.as_bytes()).is_err() {
-            return false;
-        }
-
-        let mut response = String::new();
-        let _ = stream.read_to_string(&mut response);
-
-        response.contains("Browser") || response.contains("WebKit-Version")
+        // Global timeout: covers connect + write + read altogether.
+        matches!(
+            tokio::time::timeout(Duration::from_secs(2), probe).await,
+            Ok(Some(true))
+        )
     }
 
     async fn find_new_port(&mut self) -> anyhow::Result<()> {
@@ -517,5 +540,330 @@ mod tests {
         // Cleanup
         let _ = std::fs::remove_file(lock_file);
         let _ = std::fs::remove_dir(profile_dir);
+    }
+
+    // ── Issue #4 regression tests ────────────────────────────────────
+    // Test infrastructure: mock DevTools HTTP server
+
+    #[derive(Clone, Copy)]
+    enum MockBehavior {
+        /// Chrome ≥148: responds with Content-Length and keeps the socket alive
+        /// (never closes). Reproduces the hang reported in issue #4.
+        KeepAlive,
+        /// Chrome that honors Connection: close (closes socket after response).
+        CloseAfterResponse,
+        /// Responds and keeps alive, then closes after the given duration.
+        KeepAliveThenCloseAfter(Duration),
+        /// Accepts connection but never sends anything.
+        SilentPeer,
+        /// HTTP 200 with non-Chrome body, then closes.
+        NotChrome,
+    }
+
+    fn chrome_version_json() -> String {
+        r#"{"Browser":"Chrome/148.0.7778.216","Protocol-Version":"1.3","WebKit-Version":"537.36","webSocketDebuggerUrl":"ws://127.0.0.1:9224/devtools/browser/abc"}"#.to_string()
+    }
+
+    fn chrome_http_response(body: &str) -> String {
+        format!(
+            "HTTP/1.1 200 OK\r\n\
+             Content-Security-Policy: frame-ancestors 'none'\r\n\
+             Content-Length: {}\r\n\
+             Content-Type: application/json; charset=UTF-8\r\n\
+             \r\n\
+             {}",
+            body.len(),
+            body
+        )
+    }
+
+    /// Starts a mock DevTools HTTP server on an ephemeral port.
+    /// Returns `(port, JoinHandle)`. The handle should be aborted at test end.
+    async fn mock_devtools_server(behavior: MockBehavior) -> (u16, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let handle = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+
+                tokio::spawn(async move {
+                    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+                    // Consume the HTTP request (read until \r\n\r\n)
+                    let mut req_buf = vec![0u8; 4096];
+                    let mut total = 0;
+                    loop {
+                        match stream.read(&mut req_buf[total..]).await {
+                            Ok(0) => return, // Connection dropped early (e.g. is_port_open)
+                            Ok(n) => {
+                                total += n;
+                                if String::from_utf8_lossy(&req_buf[..total]).contains("\r\n\r\n") {
+                                    break;
+                                }
+                            }
+                            Err(_) => return,
+                        }
+                    }
+
+                    match behavior {
+                        MockBehavior::KeepAlive => {
+                            let body = chrome_version_json();
+                            let resp = chrome_http_response(&body);
+                            let _ = stream.write_all(resp.as_bytes()).await;
+                            let _ = stream.flush().await;
+                            // Keep socket open forever (Chrome ≥148 ignoring Connection: close)
+                            std::future::pending::<()>().await;
+                        }
+                        MockBehavior::CloseAfterResponse => {
+                            let body = chrome_version_json();
+                            let resp = chrome_http_response(&body);
+                            let _ = stream.write_all(resp.as_bytes()).await;
+                            let _ = stream.flush().await;
+                            // Drop stream → close socket
+                        }
+                        MockBehavior::KeepAliveThenCloseAfter(delay) => {
+                            let body = chrome_version_json();
+                            let resp = chrome_http_response(&body);
+                            let _ = stream.write_all(resp.as_bytes()).await;
+                            let _ = stream.flush().await;
+                            tokio::time::sleep(delay).await;
+                            // Drop stream → close socket
+                        }
+                        MockBehavior::SilentPeer => {
+                            // Never send anything; keep socket alive
+                            std::future::pending::<()>().await;
+                        }
+                        MockBehavior::NotChrome => {
+                            let body = r#"{"status":"ok","service":"nginx"}"#;
+                            let resp = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                                body.len(),
+                                body
+                            );
+                            let _ = stream.write_all(resp.as_bytes()).await;
+                            let _ = stream.flush().await;
+                            // Drop stream → close socket
+                        }
+                    }
+                });
+            }
+        });
+
+        (port, handle)
+    }
+
+    fn test_manager(port: u16) -> ChromeInstanceManager {
+        ChromeInstanceManager::new("127.0.0.1".into(), port, false, true, false)
+    }
+
+    // ── T1: Regression for B1 (main bug from issue #4) ──
+    // With the old code, read_to_string() blocks forever when Chrome keeps the
+    // connection alive. The probe must detect markers and return quickly.
+
+    #[tokio::test]
+    async fn given_keepalive_devtools_endpoint_when_probing_cdp_then_returns_true_within_3s() {
+        let (port, server_handle) = mock_devtools_server(MockBehavior::KeepAlive).await;
+        let mgr = test_manager(port);
+
+        let result = tokio::time::timeout(Duration::from_secs(3), mgr.is_chrome_cdp()).await;
+
+        assert!(
+            matches!(result, Ok(true)),
+            "Expected Ok(true) within 3s, got {:?}. \
+             The probe must detect Chrome markers and return quickly even when \
+             the server keeps the connection alive (Chrome >=148 behavior).",
+            result
+        );
+
+        server_handle.abort();
+    }
+
+    // ── T2: Regression for B2 (blocking I/O on async runtime) ──
+    // On a current_thread runtime, blocking I/O prevents the mock server task
+    // from being polled, causing a deadlock. With truly async I/O both the
+    // probe and the mock interleave cooperatively.
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn given_slow_endpoint_when_probing_cdp_then_other_tasks_keep_progressing() {
+        let (port, server_handle) = mock_devtools_server(MockBehavior::KeepAliveThenCloseAfter(
+            Duration::from_millis(500),
+        ))
+        .await;
+        let mgr = test_manager(port);
+
+        let result = tokio::time::timeout(Duration::from_secs(3), mgr.is_chrome_cdp()).await;
+
+        assert!(
+            matches!(result, Ok(true)),
+            "Expected Ok(true) on current_thread runtime, got {:?}. \
+             If this test hangs/times out, it indicates the probe uses blocking I/O \
+             that prevents cooperative scheduling with the mock server.",
+            result
+        );
+
+        server_handle.abort();
+    }
+
+    // ── T3: Timeout behavior on silent peer ──
+    // A peer that accepts but never responds must be handled by the internal
+    // timeout (~2s), not hang forever.
+
+    #[tokio::test]
+    async fn given_silent_peer_when_probing_cdp_then_returns_false_within_bounded_time() {
+        let (port, server_handle) = mock_devtools_server(MockBehavior::SilentPeer).await;
+        let mgr = test_manager(port);
+
+        let start = std::time::Instant::now();
+        let result = tokio::time::timeout(Duration::from_secs(4), mgr.is_chrome_cdp()).await;
+        let elapsed = start.elapsed();
+
+        assert!(
+            matches!(result, Ok(false)),
+            "Expected Ok(false) within 4s, got {:?}. \
+             A silent peer should trigger the internal timeout.",
+            result
+        );
+        assert!(
+            elapsed <= Duration::from_millis(2500),
+            "Internal timeout should fire at ~2s, but took {:?}",
+            elapsed
+        );
+
+        server_handle.abort();
+    }
+
+    // ── T4: Non-regression — non-Chrome HTTP server ──
+
+    #[tokio::test]
+    async fn given_non_chrome_http_server_when_probing_cdp_then_returns_false() {
+        let (port, server_handle) = mock_devtools_server(MockBehavior::NotChrome).await;
+        let mgr = test_manager(port);
+
+        let result = tokio::time::timeout(Duration::from_secs(3), mgr.is_chrome_cdp()).await;
+
+        assert!(
+            matches!(result, Ok(false)),
+            "Expected Ok(false) for non-Chrome server, got {:?}",
+            result
+        );
+
+        server_handle.abort();
+    }
+
+    // ── T5: Non-regression — closed port ──
+
+    #[tokio::test]
+    async fn given_closed_port_when_probing_cdp_then_returns_false_quickly() {
+        // Bind to get an ephemeral port, then drop to ensure nothing listens
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let mgr = test_manager(port);
+        let start = std::time::Instant::now();
+        let result = mgr.is_chrome_cdp().await;
+        let elapsed = start.elapsed();
+
+        assert!(!result, "Should return false for closed port");
+        assert!(
+            elapsed < Duration::from_millis(2500),
+            "Should fail within the 2s internal timeout, took {:?}",
+            elapsed
+        );
+    }
+
+    // ── T6: Non-regression — Chrome that honors Connection: close ──
+
+    #[tokio::test]
+    async fn given_closing_devtools_endpoint_when_probing_cdp_then_returns_true() {
+        let (port, server_handle) = mock_devtools_server(MockBehavior::CloseAfterResponse).await;
+        let mgr = test_manager(port);
+
+        let result = tokio::time::timeout(Duration::from_secs(3), mgr.is_chrome_cdp()).await;
+
+        assert!(
+            matches!(result, Ok(true)),
+            "Expected Ok(true) for a server that closes after response, got {:?}",
+            result
+        );
+
+        server_handle.abort();
+    }
+
+    // ── T7: BDD E2E — attaching to user-started Chrome ──
+    // This is the exact scenario from issue #4: a user-started Chrome on a
+    // port, no managed profile lock, ensure_instance should attach without
+    // spawning a child process.
+
+    #[tokio::test]
+    async fn given_user_started_chrome_when_ensure_instance_then_attaches_without_spawning() {
+        let (port, server_handle) = mock_devtools_server(MockBehavior::KeepAlive).await;
+        let mut mgr = test_manager(port);
+
+        // Precondition: no managed profile lock file for this ephemeral port
+        let lock_file = std::env::temp_dir()
+            .join(format!("chrome-mcp-profile-{}", port))
+            .join("SingletonLock");
+        assert!(
+            !lock_file.exists(),
+            "Precondition failed: SingletonLock should not exist for ephemeral port {}",
+            port
+        );
+
+        let result = tokio::time::timeout(Duration::from_secs(5), mgr.ensure_instance()).await;
+
+        assert!(
+            matches!(result, Ok(Ok(()))),
+            "Expected Ok(Ok(())) — ensure_instance should attach to existing Chrome. Got {:?}",
+            result
+        );
+        assert!(
+            mgr.child.is_none(),
+            "Should not have spawned a child Chrome process when attaching to existing instance"
+        );
+
+        server_handle.abort();
+    }
+
+    // ── T8: Regression for B3 — log directory creation ──
+    // The old log() failed silently when logs/ didn't exist. The fix creates
+    // the directory with create_dir_all before writing.
+
+    #[test]
+    fn given_missing_logs_dir_when_logging_then_creates_dir_and_writes() {
+        let tmp = std::env::temp_dir().join(format!("chrome-mcp-logtest-{}", std::process::id()));
+        // Ensure starting from a clean state
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert!(!tmp.exists(), "Precondition: temp log dir should not exist");
+
+        let mgr = test_manager(0);
+        let result = mgr.log_to(&tmp, "hello from test");
+
+        assert!(
+            result.is_ok(),
+            "log_to should succeed even when directory doesn't exist: {:?}",
+            result.err()
+        );
+
+        let log_path = tmp.join("debug.log");
+        assert!(log_path.exists(), "debug.log should have been created");
+
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        assert!(
+            content.contains("hello from test"),
+            "Log should contain the message, got: {}",
+            content
+        );
+        assert!(
+            content.contains("[ChromeManager:0]"),
+            "Log should contain the port prefix, got: {}",
+            content
+        );
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
