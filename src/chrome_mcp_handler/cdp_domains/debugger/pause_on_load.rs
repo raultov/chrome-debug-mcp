@@ -24,7 +24,7 @@ impl PauseOnLoadTool {
         let client = client_lock.as_mut().unwrap();
 
         client
-            .send_raw_command("Debugger.enable", cdp_lite::protocol::NoParams)
+            .send_raw_command("Debugger.enable", cdp_browser_lite::NoParams)
             .await
             .map_err(|e| {
                 CallToolError::from_message(format!("CDP Debugger.enable error: {:?}", e))
@@ -41,7 +41,7 @@ impl PauseOnLoadTool {
             })?;
 
         client
-            .send_raw_command("Page.reload", cdp_lite::protocol::NoParams)
+            .send_raw_command("Page.reload", cdp_browser_lite::NoParams)
             .await
             .map_err(|e| CallToolError::from_message(format!("CDP Page.reload error: {:?}", e)))?;
 

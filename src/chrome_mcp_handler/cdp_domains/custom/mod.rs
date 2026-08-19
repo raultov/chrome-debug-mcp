@@ -2,8 +2,8 @@ pub mod get_custom_events;
 pub mod send_cdp_command;
 
 use crate::chrome_mcp_handler::{CustomEvent, CustomState};
-use cdp_lite::client::CdpClient;
-use cdp_lite::protocol::WsResponse;
+use cdp_browser_lite::CdpClient;
+use cdp_browser_lite::WsResponse;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

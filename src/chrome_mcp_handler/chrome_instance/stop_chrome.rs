@@ -24,7 +24,7 @@ impl StopChromeTool {
             *client_lock = None;
         }
 
-        if let Err(e) = manager.stop_instance() {
+        if let Err(e) = manager.stop_instance().await {
             return Err(CallToolError::from_message(format!(
                 "Failed to stop Chrome: {}",
                 e

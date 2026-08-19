@@ -8,7 +8,7 @@ pub mod runtime;
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use cdp_lite::client::CdpClient;
+    use cdp_browser_lite::CdpClient;
     use serde_json::json;
     use std::time::Duration;
 

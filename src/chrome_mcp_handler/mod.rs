@@ -24,14 +24,15 @@ use cdp_domains::performance::get_performance_metrics::GetPerformanceMetricsTool
 use cdp_domains::runtime::evaluate_js::EvaluateJsTool;
 use cdp_domains::runtime::inspect_dom::InspectDomTool;
 use cdp_domains::tracing::profile_page_performance::ProfilePagePerformanceTool;
+use chrome_instance::cdp_browser_manager::{CdpBrowserManager, RealLauncher};
+use chrome_instance::launch::LaunchParams;
 use chrome_instance::restart_chrome::RestartChromeTool;
 use chrome_instance::stop_chrome::StopChromeTool;
 
 use async_trait::async_trait;
-use cdp_lite::client::CdpClient;
+use cdp_browser_lite::CdpClient;
 use rust_mcp_sdk::{McpServer, mcp_server::ServerHandler, schema::*};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::Mutex;
 
 #[derive(Clone, Debug, ::serde::Serialize, ::serde::Deserialize)]
@@ -107,6 +108,8 @@ impl ChromeMcpHandler {
         headless: bool,
         user_profile: bool,
     ) -> Self {
+        let params = LaunchParams::new(host, port, enable_automation, headless, user_profile);
+        let manager = CdpBrowserManager::new(params, Box::new(RealLauncher));
         Self {
             client: Arc::new(Mutex::new(None)),
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
@@ -114,13 +117,7 @@ impl ChromeMcpHandler {
             log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
             tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
             custom_state: Arc::new(Mutex::new(CustomState::default())),
-            chrome_manager: Arc::new(Mutex::new(chrome_instance::ChromeInstanceManager::new(
-                host,
-                port,
-                enable_automation,
-                headless,
-                user_profile,
-            ))),
+            chrome_manager: Arc::new(Mutex::new(manager)),
             local_only,
         }
     }
@@ -204,28 +201,26 @@ impl ChromeMcpHandler {
 
         let mut client_lock = self.client.lock().await;
         if client_lock.is_none() {
-            let port = {
+            let client_res = {
                 let manager = self.chrome_manager.lock().await;
-                manager.get_port()
+                manager.client().await
             };
-
-            let addr = format!("127.0.0.1:{}", port);
-            match CdpClient::new(&addr, Duration::from_secs(10)).await {
+            match client_res {
                 Ok(mut client) => {
                     let _ = client
-                        .send_raw_command("Runtime.enable", cdp_lite::protocol::NoParams)
+                        .send_raw_command("Runtime.enable", cdp_browser_lite::NoParams)
                         .await;
                     let _ = client
-                        .send_raw_command("Page.enable", cdp_lite::protocol::NoParams)
+                        .send_raw_command("Page.enable", cdp_browser_lite::NoParams)
                         .await;
                     let _ = client
-                        .send_raw_command("Network.enable", cdp_lite::protocol::NoParams)
+                        .send_raw_command("Network.enable", cdp_browser_lite::NoParams)
                         .await;
                     let _ = client
-                        .send_raw_command("Log.enable", cdp_lite::protocol::NoParams)
+                        .send_raw_command("Log.enable", cdp_browser_lite::NoParams)
                         .await;
                     let _ = client
-                        .send_raw_command("Performance.enable", cdp_lite::protocol::NoParams)
+                        .send_raw_command("Performance.enable", cdp_browser_lite::NoParams)
                         .await;
 
                     cdp_domains::debugger::start_debugger_listener(
@@ -245,15 +240,15 @@ impl ChromeMcpHandler {
                     );
 
                     let _ = client
-                        .send_raw_command("Debugger.enable", cdp_lite::protocol::NoParams)
+                        .send_raw_command("Debugger.enable", cdp_browser_lite::NoParams)
                         .await;
 
                     *client_lock = Some(client);
                 }
                 Err(e) => {
                     return Err(CallToolError::from_message(format!(
-                        "Failed to connect to Chrome at {}: {}",
-                        addr, e
+                        "Failed to connect to Chrome: {}",
+                        e
                     )));
                 }
             }

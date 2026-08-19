@@ -6,7 +6,7 @@
 
 **chrome-debug-mcp** is an asynchronous Rust-based **Model Context Protocol (MCP)** server that allows AI agents and Large Language Models to natively control, automate, and debug Chromium-based browsers via the **Chrome DevTools Protocol (CDP)**.
 
-Using `cdp-lite` underneath, this MCP server directly hooks into the browser avoiding heavy abstractions, enabling live-debugging sessions directly from your editor or chat-interface. Starting from v0.2.0, it can also manage the Chrome process lifecycle automatically.
+Using [`cdp-browser-lite`](https://crates.io/crates/cdp-browser-lite) underneath (which itself re-exports the `cdp-lite` client), this MCP server directly hooks into the browser avoiding heavy abstractions, enabling live-debugging sessions directly from your editor or chat-interface. Starting from v0.2.0, it can also manage the Chrome process lifecycle automatically.
 
 <div align="center">
   <a href="https://glama.ai/mcp/servers/raultov/chrome-debug-mcp">
@@ -42,6 +42,7 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * `restart_chrome`: Restarts the managed Chrome instance.
 * `stop_chrome`: Shuts down the managed Chrome instance gracefully (SIGTERM/SIGINT with fallback to SIGKILL).
 * **Robust Lifecycle**: Fixed issues with dangling Chrome processes and patched preferences for cleaner restarts.
+* **⚠️ Behaviour change (v1.1.0)**: Managed Chrome instances are now **terminated when the MCP server process exits** (including crashes). Previously a managed Chrome survived a server crash and was re-attached on restart; from now on it is killed. Attached (user-started) Chrome instances are never killed.
 
 **🔐 Proxy Authentication (v0.8.0)**
 * `enable_proxy_auth`: Automatically handles proxy authentication challenges by hooking into the `Fetch` CDP domain and supplying user-provided credentials (username & password).
@@ -93,7 +94,7 @@ This server natively implements a suite of tools categorized by CDP domains and 
 
 ## ⚙️ Configuration
 
-By default, the MCP Server attempts to find the Chrome executable in standard OS-specific locations (e.g., `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` on macOS, or `chrome` in your system `PATH` on Windows).
+By default, the MCP Server discovers the Chrome executable through `cdp-browser-lite`'s cross-platform search: `CHROME_PATH` first (absolute priority), then common binaries in your `PATH` (`google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`), then OS-specific locations (`/Applications/Google Chrome.app/...` on macOS, the `chrome.exe` install dir on Windows, `/usr/bin/google-chrome`, `/opt/google/chrome/chrome` and `/snap/bin/chromium` on Linux). This is a strict superset of the paths the server previously hardcoded.
 
 **Arguments:**
 * `--local`: Restricts navigation to local addresses only (`localhost`, `127.0.0.1`, `192.168.x.x`, or `*.local`). Highly recommended for security.

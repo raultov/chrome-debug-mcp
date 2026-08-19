@@ -7,8 +7,8 @@ pub mod set_breakpoint;
 pub mod step_over;
 
 use crate::chrome_mcp_handler::{DebuggerState, ScriptInfo, extract_from_value};
-use cdp_lite::client::CdpClient;
-use cdp_lite::protocol::WsResponse;
+use cdp_browser_lite::CdpClient;
+use cdp_browser_lite::WsResponse;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

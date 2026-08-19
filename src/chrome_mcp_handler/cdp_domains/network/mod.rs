@@ -3,8 +3,8 @@ pub mod get_network_logs;
 use crate::chrome_mcp_handler::NetworkRequest;
 use crate::chrome_mcp_handler::NetworkState;
 use crate::chrome_mcp_handler::WebSocketFrame;
-use cdp_lite::client::CdpClient;
-use cdp_lite::protocol::WsResponse;
+use cdp_browser_lite::CdpClient;
+use cdp_browser_lite::WsResponse;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

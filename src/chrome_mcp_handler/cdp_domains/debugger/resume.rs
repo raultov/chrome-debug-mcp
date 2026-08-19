@@ -20,7 +20,7 @@ impl ResumeTool {
         let cdp_client = client_lock.as_mut().unwrap();
 
         let _ = cdp_client
-            .send_raw_command("Debugger.resume", cdp_lite::protocol::NoParams)
+            .send_raw_command("Debugger.resume", cdp_browser_lite::NoParams)
             .await
             .map_err(|e| {
                 CallToolError::from_message(format!("Failed to resume execution: {:?}", e))

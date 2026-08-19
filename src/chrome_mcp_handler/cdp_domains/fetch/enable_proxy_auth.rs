@@ -1,5 +1,5 @@
 use crate::chrome_mcp_handler::ChromeMcpHandler;
-use cdp_lite::protocol::NoParams;
+use cdp_browser_lite::NoParams;
 use rust_mcp_sdk::{
     macros,
     schema::{CallToolError, CallToolRequestParams, CallToolResult},

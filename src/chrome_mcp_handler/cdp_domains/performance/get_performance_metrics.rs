@@ -57,6 +57,7 @@ impl GetPerformanceMetricsTool {
 mod tests {
     use super::*;
     use crate::chrome_mcp_handler::cdp_domains::tests::spawn_mock_chrome_server;
+    use crate::chrome_mcp_handler::chrome_instance::MockChromeManager;
     use serde_json::json;
 
     #[test]
@@ -69,11 +70,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_performance_metrics_handle() {
         let port = spawn_mock_chrome_server().await;
-        let handler = ChromeMcpHandler::new_test();
-        {
-            let mut manager = handler.chrome_manager.lock().await;
-            manager.set_port(port);
-        }
+        let mut handler = ChromeMcpHandler::new_test();
+        handler.chrome_manager =
+            std::sync::Arc::new(tokio::sync::Mutex::new(MockChromeManager::new(port)));
 
         let params = CallToolRequestParams {
             name: "get_performance_metrics".to_string(),
