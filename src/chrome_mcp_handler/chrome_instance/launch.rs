@@ -1,6 +1,58 @@
 use cdp_browser_lite::{BrowserConfig, LaunchMode, ProfileMode};
+use rust_mcp_sdk::macros;
 
 const PROFILE_ROOT_PREFIX: &str = "chrome-mcp-profile-";
+
+/// Curated Chrome capability presets an MCP client may request when restarting
+/// the browser.
+///
+/// This is deliberately a closed enum rather than free-form command line
+/// arguments: it keeps `restart_chrome` from becoming an arbitrary Chrome-flag
+/// injection point (`--disable-web-security`, `--load-extension`, ...).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    ::serde::Serialize,
+    ::serde::Deserialize,
+    macros::JsonSchema,
+)]
+pub enum ChromeFeature {
+    /// Experimental WebMCP surface, used by sites that expose tools to the browser.
+    #[serde(rename = "WEB_MCP")]
+    WebMcp,
+    /// Software (SwiftShader) rasterization for WebGL, for GPU-less environments.
+    #[serde(rename = "WEBGL_SOFTWARE")]
+    WebglSoftware,
+}
+
+impl ChromeFeature {
+    /// Stable client-facing name of this preset, matching the published schema.
+    pub(crate) fn as_name(self) -> &'static str {
+        match self {
+            Self::WebMcp => "WEB_MCP",
+            Self::WebglSoftware => "WEBGL_SOFTWARE",
+        }
+    }
+
+    /// Chrome command line switches this preset expands to.
+    pub(crate) fn switches(self) -> &'static [&'static str] {
+        match self {
+            Self::WebMcp => &[
+                "--enable-features=WebMCPTesting",
+                "--categoryExperimentalWebmcp=true",
+            ],
+            Self::WebglSoftware => &[
+                "--use-gl=angle",
+                "--use-angle=swiftshader",
+                "--enable-unsafe-swiftshader",
+            ],
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct LaunchParams {
@@ -10,6 +62,7 @@ pub(crate) struct LaunchParams {
     enable_automation: bool,
     user_profile: bool,
     proxy: Option<String>,
+    features: Vec<ChromeFeature>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,7 +87,16 @@ impl LaunchParams {
             headless,
             user_profile,
             proxy: None,
+            features: Vec::new(),
         }
+    }
+
+    pub(crate) fn set_features(&mut self, features: Vec<ChromeFeature>) {
+        self.features = features;
+    }
+
+    pub(crate) fn features(&self) -> &[ChromeFeature] {
+        &self.features
     }
 
     pub(crate) fn set_proxy(&mut self, proxy: Option<String>) {
@@ -59,11 +121,18 @@ impl LaunchParams {
                 prefix: PROFILE_ROOT_PREFIX.to_string(),
             }
         };
-        let extra_args = if self.enable_automation {
+        let mut extra_args = if self.enable_automation {
             Vec::new()
         } else {
             vec!["--disable-infobars".to_string()]
         };
+        // Presets may overlap, and a client may repeat one; emit each switch once.
+        for switch in self.features.iter().flat_map(|f| f.switches()) {
+            let switch = (*switch).to_string();
+            if !extra_args.contains(&switch) {
+                extra_args.push(switch);
+            }
+        }
         LaunchPlan {
             mode,
             profile,
@@ -195,5 +264,87 @@ mod tests {
         let plan = params.plan();
         let config = params.to_config(&plan);
         assert_eq!(config.port(), 9222);
+    }
+
+    #[test]
+    fn given_web_mcp_feature_when_planning_then_its_switches_are_appended() {
+        let mut params = default_params();
+        params.set_features(vec![ChromeFeature::WebMcp]);
+        assert_eq!(
+            params.plan().extra_args,
+            vec![
+                "--disable-infobars".to_string(),
+                "--enable-features=WebMCPTesting".to_string(),
+                "--categoryExperimentalWebmcp=true".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn given_webgl_software_feature_when_planning_then_its_switches_are_appended() {
+        let mut params = LaunchParams::new("127.0.0.1".into(), 9222, true, true, false);
+        params.set_features(vec![ChromeFeature::WebglSoftware]);
+        assert_eq!(
+            params.plan().extra_args,
+            vec![
+                "--use-gl=angle".to_string(),
+                "--use-angle=swiftshader".to_string(),
+                "--enable-unsafe-swiftshader".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn given_several_features_when_planning_then_all_switches_are_present() {
+        let mut params = default_params();
+        params.set_features(vec![ChromeFeature::WebMcp, ChromeFeature::WebglSoftware]);
+        let extra_args = params.plan().extra_args;
+        for expected in ChromeFeature::WebMcp
+            .switches()
+            .iter()
+            .chain(ChromeFeature::WebglSoftware.switches())
+        {
+            assert!(
+                extra_args.contains(&(*expected).to_string()),
+                "{expected} must be present in {extra_args:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn given_repeated_feature_when_planning_then_switches_are_not_duplicated() {
+        let mut params = default_params();
+        params.set_features(vec![ChromeFeature::WebMcp, ChromeFeature::WebMcp]);
+        let extra_args = params.plan().extra_args;
+        let occurrences = extra_args
+            .iter()
+            .filter(|a| *a == "--enable-features=WebMCPTesting")
+            .count();
+        assert_eq!(occurrences, 1, "got {extra_args:?}");
+    }
+
+    #[test]
+    fn given_no_features_when_planning_then_no_feature_switches_are_added() {
+        let params = default_params();
+        assert_eq!(
+            params.plan().extra_args,
+            vec!["--disable-infobars".to_string()]
+        );
+    }
+
+    #[test]
+    fn given_feature_names_when_deserializing_then_screaming_snake_case_is_accepted() {
+        let features: Vec<ChromeFeature> =
+            serde_json::from_str(r#"["WEB_MCP","WEBGL_SOFTWARE"]"#).unwrap();
+        assert_eq!(
+            features,
+            vec![ChromeFeature::WebMcp, ChromeFeature::WebglSoftware]
+        );
+    }
+
+    #[test]
+    fn given_unknown_feature_name_when_deserializing_then_it_is_rejected() {
+        let parsed: Result<ChromeFeature, _> = serde_json::from_str(r#""DISABLE_WEB_SECURITY""#);
+        assert!(parsed.is_err(), "unknown presets must not deserialize");
     }
 }

@@ -8,6 +8,8 @@ pub mod stop_chrome;
 use async_trait::async_trait;
 use cdp_browser_lite::CdpClient;
 
+use crate::chrome_mcp_handler::chrome_instance::launch::ChromeFeature;
+
 #[async_trait]
 pub trait ChromeManager: Send + Sync {
     async fn ensure_instance(&mut self) -> anyhow::Result<()>;
@@ -22,17 +24,28 @@ pub trait ChromeManager: Send + Sync {
     )]
     fn get_port(&self) -> u16;
     fn set_proxy(&mut self, proxy: Option<String>);
+    /// Replaces the capability presets applied on the next launch. Like
+    /// [`ChromeManager::set_proxy`], an empty list clears any previous value.
+    fn set_features(&mut self, features: Vec<ChromeFeature>);
+    /// Returns the currently configured capability presets.
+    fn features(&self) -> &[ChromeFeature];
+    #[cfg(test)]
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 #[cfg(test)]
 pub struct MockChromeManager {
     port: u16,
+    features: Vec<ChromeFeature>,
 }
 
 #[cfg(test)]
 impl MockChromeManager {
     pub fn new(port: u16) -> Self {
-        Self { port }
+        Self {
+            port,
+            features: Vec::new(),
+        }
     }
 }
 
@@ -60,8 +73,20 @@ impl ChromeManager for MockChromeManager {
         self.port
     }
 
+    fn features(&self) -> &[ChromeFeature] {
+        &self.features
+    }
+
     fn set_proxy(&mut self, _proxy: Option<String>) {
         // Mock: do nothing
+    }
+
+    fn set_features(&mut self, features: Vec<ChromeFeature>) {
+        self.features = features;
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

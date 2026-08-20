@@ -95,6 +95,7 @@ pub struct ChromeMcpHandler {
     pub(crate) log_state: Arc<Mutex<cdp_domains::log::LogState>>,
     pub(crate) tracing_state: Arc<Mutex<cdp_domains::tracing::TracingState>>,
     pub(crate) custom_state: Arc<Mutex<CustomState>>,
+    pub(crate) webmcp_state: Arc<Mutex<cdp_domains::webmcp::WebmcpState>>,
     pub(crate) chrome_manager: Arc<Mutex<dyn chrome_instance::ChromeManager>>,
     pub(crate) local_only: bool,
 }
@@ -117,6 +118,7 @@ impl ChromeMcpHandler {
             log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
             tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
             custom_state: Arc::new(Mutex::new(CustomState::default())),
+            webmcp_state: Arc::new(Mutex::new(cdp_domains::webmcp::WebmcpState::default())),
             chrome_manager: Arc::new(Mutex::new(manager)),
             local_only,
         }
@@ -131,6 +133,7 @@ impl ChromeMcpHandler {
             log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
             tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
             custom_state: Arc::new(Mutex::new(CustomState::default())),
+            webmcp_state: Arc::new(Mutex::new(cdp_domains::webmcp::WebmcpState::default())),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::MockChromeManager::new(9999))),
             local_only: false,
         }
@@ -223,6 +226,18 @@ impl ChromeMcpHandler {
                         .send_raw_command("Performance.enable", cdp_browser_lite::NoParams)
                         .await;
 
+                    let has_webmcp = {
+                        let manager = self.chrome_manager.lock().await;
+                        manager
+                            .features()
+                            .contains(&chrome_instance::launch::ChromeFeature::WebMcp)
+                    };
+                    if has_webmcp {
+                        let _ = client
+                            .send_raw_command("WebMCP.enable", cdp_browser_lite::NoParams)
+                            .await;
+                    }
+
                     cdp_domains::debugger::start_debugger_listener(
                         &mut client,
                         self.debugger_state.clone(),
@@ -238,6 +253,12 @@ impl ChromeMcpHandler {
                         &mut client,
                         self.tracing_state.clone(),
                     );
+                    if has_webmcp {
+                        cdp_domains::webmcp::start_webmcp_listener(
+                            &mut client,
+                            self.webmcp_state.clone(),
+                        );
+                    }
 
                     let _ = client
                         .send_raw_command("Debugger.enable", cdp_browser_lite::NoParams)
@@ -290,6 +311,10 @@ impl ServerHandler for ChromeMcpHandler {
                 EnableProxyAuthTool::tool(),
                 SendCdpCommandTool::tool(),
                 GetCustomEventsTool::tool(),
+                cdp_domains::webmcp::ListWebmcpToolsTool::tool(),
+                cdp_domains::webmcp::InvokeWebmcpToolTool::tool(),
+                cdp_domains::webmcp::GetWebmcpInvocationTool::tool(),
+                cdp_domains::webmcp::ListWebmcpInvocationsTool::tool(),
             ],
             meta: None,
             next_cursor: None,
@@ -349,6 +374,14 @@ impl ServerHandler for ChromeMcpHandler {
             SendCdpCommandTool::handle(params, self).await
         } else if params.name == "get_custom_events" {
             GetCustomEventsTool::handle(params, self).await
+        } else if params.name == "webmcp_list_tools" {
+            cdp_domains::webmcp::ListWebmcpToolsTool::handle(params, self).await
+        } else if params.name == "webmcp_invoke_tool" {
+            cdp_domains::webmcp::InvokeWebmcpToolTool::handle(params, self).await
+        } else if params.name == "webmcp_get_invocation" {
+            cdp_domains::webmcp::GetWebmcpInvocationTool::handle(params, self).await
+        } else if params.name == "webmcp_list_invocations" {
+            cdp_domains::webmcp::ListWebmcpInvocationsTool::handle(params, self).await
         } else {
             Err(CallToolError::unknown_tool(params.name))
         }
@@ -505,7 +538,7 @@ mod tests {
         let tools = result.unwrap().tools;
 
         // Ensure all registered tools are present
-        assert_eq!(tools.len(), 24);
+        assert_eq!(tools.len(), 28);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"scroll".to_string()));
         assert!(tool_names.contains(&"capture_screenshot".to_string()));

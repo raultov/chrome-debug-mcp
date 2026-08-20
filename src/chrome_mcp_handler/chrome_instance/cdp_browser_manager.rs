@@ -63,6 +63,22 @@ impl crate::chrome_mcp_handler::chrome_instance::ChromeManager for CdpBrowserMan
     fn set_proxy(&mut self, proxy: Option<String>) {
         self.params.set_proxy(proxy);
     }
+
+    fn features(&self) -> &[crate::chrome_mcp_handler::chrome_instance::launch::ChromeFeature] {
+        self.params.features()
+    }
+
+    fn set_features(
+        &mut self,
+        features: Vec<crate::chrome_mcp_handler::chrome_instance::launch::ChromeFeature>,
+    ) {
+        self.params.set_features(features);
+    }
+
+    #[cfg(test)]
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[async_trait]
