@@ -28,6 +28,8 @@ This server natively implements a suite of tools categorized by CDP domains and 
   * ⚠️ **Note on `--user-profile`**: Due to Chrome's singleton architecture, if your browser is already open, it will delegate the request and **fail to open the debugging port**. You must either **close all existing Chrome instances** before starting the MCP, or start your browser manually with the `--remote-debugging-port=9222` flag.
 
 **🚀 Chrome Instance Management**
+* **Multi-Instance Support (New)**: Spawns and controls multiple concurrent, independent Chrome processes on dynamic ports, each with its own isolated profile directory. Limit the number of instances using the `--max-instances` flag.
+* **Instance Registry Tools**: Use `open_instance`, `list_instances`, and `close_instance` to create, audit, and clean up additional instances. All existing tools accept an optional `instance_id` to route commands to the targeted browser.
 * **Isolated Profiles**: Launches Chrome using a fresh, temporary profile by default, ensuring it doesn't share cookies, passwords, or session data with your main browser.
 * **User Profile Support**: Optionally use `--user-profile` to leverage your existing browser sessions and cookies.
 * **Dynamic Port Management**: Automatically detects if the default port (9222) is in use. 
@@ -117,6 +119,7 @@ By default, the MCP Server discovers the Chrome executable through `cdp-browser-
 * `--host`: Specifies the target host for the Chrome instance (default: `127.0.0.1`). Use `host.docker.internal` to connect to a host machine from a container.
 * `--port`: Specifies the remote debugging port (default: `9222`).
 * `--enable-automation`: Enables the "controlled by automated software" infobar.
+* `--max-instances`: Limits the maximum number of concurrent Chrome instances (default: 8). Ignored if `--user-profile` is set.
 
 **Environment Variables:**
 * `CHROME_PATH`: Explicitly define the path to the Chrome executable.
@@ -215,6 +218,22 @@ Then, inside the Gemini CLI session, enable it:
 
 ### 3. Usage
 Once connected, the AI agent will automatically handle starting Chrome when the first command is executed. The browser will remain visible so you can visually track the debugging process.
+
+### 4. Agent Workflows & Multi-Instance Guidance
+
+LLMs can operate this server using a few optimized patterns:
+
+#### A. Isolated Multi-Instance Scenarios
+When running automated browser sessions, you can launch separate Chrome processes to prevent cookie pollution or tab collision:
+1. Call `open_instance` with `label: "user-session-1"` or optional proxy server configs. This returns a unique `instance_id` (e.g. `chrome-2`).
+2. Pass the `instance_id` explicitly to downstream tools like `navigate`, `evaluate_js`, or `webmcp_list_tools`.
+3. Clear up resources using `close_instance` once finished.
+
+#### B. Working with WebMCP
+If you navigate to a page that supports WebMCP (e.g., https://www.knot.kz/#/agent-tools):
+1. Tools registered by the web page can be retrieved using `webmcp_list_tools`.
+2. By default, `WEB_MCP` is disabled for safety. If the tools list is empty, call `restart_chrome` with `features: ["WEB_MCP"]` and then `reload`.
+3. Invoke page tools using `webmcp_invoke_tool`, providing input JSON arguments. If a consent dialog pauses execution on the web page, the tool will timeout after 30 seconds but keep the invocation pending. You can poll its result using `webmcp_get_invocation`.
 
 ---
 
