@@ -172,10 +172,10 @@ curl --proto '=https' --tlsv1.2 -LsSf https://github.com/raultov/chrome-debug-mc
 ```
 
 ### 2. Configure your MCP Client
-This server is fully tested and confirmed to work with **Claude Desktop**, **Gemini CLI**, and **ChatGPT (GPT) CLI**. Configure your AI client to execute the server using any of the following modes.
+This server is fully tested and confirmed to work with **Claude Code**, **agy**, and **codex**. Configure your AI client to execute the server using any of the following modes.
 
 #### **Universal Configuration (JSON)**
-Most MCP clients (like Claude Desktop or any JSON-based config) use this structure. Here are the three main usage modes:
+Most MCP clients (like Claude Code or any JSON-based config) use this structure. Here are the three main usage modes:
 
 ```json
 {
@@ -206,14 +206,10 @@ Most MCP clients (like Claude Desktop or any JSON-based config) use this structu
 ```
 *Note: The `chrome-docker-hybrid` mode using `--net=host` is the recommended way on Linux to allow the container to access your local Chrome instance on `127.0.0.1`.*
 
-#### **Gemini CLI**
-To add and activate the server in Gemini CLI:
+#### **Claude Code**
+To add and activate the server in Claude Code:
 ```bash
-gemini mcp add chrome-debug-mcp chrome-debug-mcp
-```
-Then, inside the Gemini CLI session, enable it:
-```bash
-/mcp enable chrome-debug-mcp
+claude mcp add chrome-debug-mcp chrome-debug-mcp
 ```
 
 ### 3. Usage
