@@ -52,12 +52,22 @@ pub struct WebmcpInvocation {
     pub error_text: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ::serde::Serialize, ::serde::Deserialize, Default)]
+pub enum WebmcpAvailability {
+    #[default]
+    NotRequested,
+    Unsupported,
+    Enabled,
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct WebmcpState {
     // Maps frame_id -> (tool_name -> Tool)
     pub tools: HashMap<String, HashMap<String, WebmcpTool>>,
     // Maps invocation_id -> Invocation
     pub invocations: HashMap<String, WebmcpInvocation>,
+    // Tracks current availability of the WebMCP feature
+    pub availability: WebmcpAvailability,
 }
 
 pub(crate) async fn process_webmcp_event(event: &WsResponse, state: &Arc<Mutex<WebmcpState>>) {

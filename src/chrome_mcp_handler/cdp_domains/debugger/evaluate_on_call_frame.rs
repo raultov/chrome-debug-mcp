@@ -11,6 +11,8 @@ use serde_json::json;
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct EvaluateOnCallFrameTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// JavaScript expression to evaluate in call frame scope. Constraints: valid JavaScript accessing local/closure variables. Interactions: requires active paused debugger session; has access to function parameters and local variables. Defaults to: None (required).
     pub expression: String,
 }
@@ -23,10 +25,11 @@ impl EvaluateOnCallFrameTool {
         let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let args: EvaluateOnCallFrameTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
 
         // Validation: check if we have a paused call frame ID FIRST
         {
-            let st = handler.debugger_state.lock().await;
+            let st = session.debugger_state.lock().await;
             if st.paused_call_frame_id.is_none() {
                 return Err(CallToolError::from_message(
                     "No active call frame ID stored in debugger state.",
@@ -34,11 +37,11 @@ impl EvaluateOnCallFrameTool {
             }
         }
 
-        let mut chrome_handler_lock = handler.get_or_connect().await?;
+        let mut chrome_handler_lock = session.get_or_connect().await?;
         let cdp_client = chrome_handler_lock.as_mut().unwrap();
 
         let call_frame_id = {
-            let state = handler.debugger_state.lock().await;
+            let state = session.debugger_state.lock().await;
             state.paused_call_frame_id.clone()
         };
 

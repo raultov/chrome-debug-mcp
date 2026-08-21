@@ -11,6 +11,8 @@ use serde_json::json;
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct CaptureScreenshotTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Output image format. Constraints: must be 'png', 'jpeg', or 'webp'. Interactions: 'quality' applies only to 'jpeg' and 'webp' formats. Defaults to: "png".
     pub format: Option<String>,
     /// Compression quality (0-100, higher=better quality). Constraints: integer between 0 and 100. Interactions: only applies when 'format' is 'jpeg' or 'webp'; ignored for 'png'. Defaults to: 100.
@@ -27,8 +29,9 @@ impl CaptureScreenshotTool {
         let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let args: CaptureScreenshotTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
 
-        let mut client_lock = handler.get_or_connect().await?;
+        let mut client_lock = session.get_or_connect().await?;
         let cdp_client = client_lock.as_mut().unwrap();
 
         let format = args.format.unwrap_or_else(|| "png".to_string());
@@ -162,7 +165,9 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "capture_screenshot",

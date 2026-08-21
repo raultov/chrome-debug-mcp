@@ -11,6 +11,8 @@ use serde_json::json;
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct GetNetworkLogsTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Clear network cache after returning logs. Constraints: boolean. Interactions: when true, subsequent calls return only new traffic. Defaults to: false.
     #[serde(default)]
     pub clear: Option<bool>,
@@ -44,6 +46,7 @@ impl GetNetworkLogsTool {
         let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let args: GetNetworkLogsTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
 
         let type_filter = args
             .type_filter
@@ -60,7 +63,9 @@ impl GetNetworkLogsTool {
         let include_details = args.include_details.unwrap_or(true);
 
         let (mut requests, mut ws_frames) = {
-            let mut st = handler.network_state.lock().await;
+            let session = handler.session(None).await.unwrap();
+            let _ = &session;
+            let mut st = handler.default_session.network_state.lock().await;
             let reqs = st.requests.clone();
             let ws = st.ws_frames.clone();
             if args.clear.unwrap_or(false) {
@@ -81,7 +86,7 @@ impl GetNetworkLogsTool {
             });
 
             if include_details {
-                let client_lock_opt = handler.get_or_connect().await.ok();
+                let client_lock_opt = session.get_or_connect().await.ok();
                 if let Some(mut client_lock) = client_lock_opt
                     && let Some(client) = client_lock.as_mut()
                 {
@@ -207,7 +212,7 @@ mod tests {
     }
 
     async fn setup_mock_data(handler: &ChromeMcpHandler) {
-        let mut st = handler.network_state.lock().await;
+        let mut st = handler.default_session.network_state.lock().await;
 
         // Mock REST request
         st.requests.insert(

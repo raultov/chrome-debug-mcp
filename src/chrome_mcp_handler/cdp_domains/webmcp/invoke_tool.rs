@@ -10,6 +10,8 @@ use rust_mcp_sdk::{
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct InvokeWebmcpToolTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Target frame ID where the tool is registered. Constraints: must match a valid frame ID returned by webmcp_list_tools.
     #[serde(rename = "frameId")]
     pub frame_id: String,
@@ -58,10 +60,11 @@ impl InvokeWebmcpToolTool {
             params.arguments.unwrap_or_default(),
         ))
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
+        let session = handler.session(tool.instance_id.clone()).await?;
 
         let input_obj = parse_input_object(&tool.input)?;
 
-        let mut client_guard = handler.get_or_connect().await?;
+        let mut client_guard = session.get_or_connect().await?;
         let client = client_guard.as_mut().ok_or_else(|| {
             CallToolError::from_message("Chrome connection is not established".to_string())
         })?;
@@ -103,7 +106,7 @@ impl InvokeWebmcpToolTool {
                 )));
             }
 
-            let st = handler.webmcp_state.lock().await;
+            let st = session.webmcp_state.lock().await;
             if let Some(invocation) = st.invocations.get(&invocation_id)
                 && let Some(status) = &invocation.status
             {

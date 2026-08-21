@@ -10,14 +10,22 @@ use serde_json::json;
     description = "Reloads the current page, discarding all unsaved changes and re-fetching resources from the server. Side effects: destructive of unsaved state; clears dynamic DOM state. Prerequisites: requires an active Chrome tab. Returns: reload confirmation. Use this to refresh page content or reset to initial load state. Alternatives: 'navigate' to load a different URL, 'pause_on_load' to debug reload execution."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
-pub struct ReloadTool {}
+pub struct ReloadTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
+}
 
 impl ReloadTool {
     pub async fn handle(
-        _params: CallToolRequestParams,
+        params: CallToolRequestParams,
         handler: &ChromeMcpHandler,
     ) -> Result<CallToolResult, CallToolError> {
-        let mut client_lock = handler.get_or_connect().await?;
+        let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
+        let args: ReloadTool = serde_json::from_value(args_value)
+            .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
+
+        let mut client_lock = session.get_or_connect().await?;
         let cdp_client = client_lock.as_mut().unwrap();
 
         let response = cdp_client.send_raw_command("Page.reload", json!({})).await;
@@ -64,7 +72,9 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "reload",

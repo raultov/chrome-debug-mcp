@@ -13,14 +13,22 @@ use serde_json::json;
     description = "Enables the debugger and injects a breakpoint at the first statement of any script loaded after reloading the page. Side effects: reloads the current page (destructive of unsaved state). Prerequisites: requires an active Chrome tab. Returns: confirmation of debugger enablement and page reload. Use this to debug script execution from the page load. Alternatives: 'set_breakpoint' for targeting specific scripts/lines, 'pause_on_exceptions' for exception-based pausing."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
-pub struct PauseOnLoadTool {}
+pub struct PauseOnLoadTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
+}
 
 impl PauseOnLoadTool {
     pub async fn handle(
-        _params: CallToolRequestParams,
+        params: CallToolRequestParams,
         handler: &ChromeMcpHandler,
     ) -> Result<CallToolResult, CallToolError> {
-        let mut client_lock = handler.get_or_connect().await?;
+        let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
+        let args: PauseOnLoadTool = serde_json::from_value(args_value)
+            .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
+
+        let mut client_lock = session.get_or_connect().await?;
         let client = client_lock.as_mut().unwrap();
 
         client
@@ -83,7 +91,9 @@ mod tests {
 
         // Create a handler with a MockChromeManager that returns our mock server's port
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "pause_on_load",

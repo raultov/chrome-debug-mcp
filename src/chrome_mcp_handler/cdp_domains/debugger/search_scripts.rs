@@ -11,6 +11,8 @@ use serde_json::json;
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct SearchScriptsTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Text pattern or special command to search for. Constraints: non-empty string (empty string returns cached script count). Interactions: '@source' returns first 1000 chars of each script; 'debug' returns script lengths and errors. Defaults to: None (required).
     pub query: String,
 }
@@ -23,11 +25,12 @@ impl SearchScriptsTool {
         let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let args: SearchScriptsTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
 
         // Check empty query BEFORE connecting — this is a pure state query
         if args.query.is_empty() {
             let scripts = {
-                let state = handler.debugger_state.lock().await;
+                let state = session.debugger_state.lock().await;
                 state.scripts.clone()
             };
             return Ok(CallToolResult::text_content(vec![
@@ -35,11 +38,11 @@ impl SearchScriptsTool {
             ]));
         }
 
-        let mut client_lock = handler.get_or_connect().await?;
+        let mut client_lock = session.get_or_connect().await?;
         let cdp_client = client_lock.as_mut().unwrap();
 
         let scripts = {
-            let state = handler.debugger_state.lock().await;
+            let state = session.debugger_state.lock().await;
             state.scripts.clone()
         };
 
@@ -119,7 +122,7 @@ mod tests {
 
         // Prepopulate 3 scripts in state
         {
-            let mut st = handler.debugger_state.lock().await;
+            let mut st = handler.default_session.debugger_state.lock().await;
             for i in 0..3 {
                 st.scripts.insert(
                     format!("script-{}", i),
@@ -191,10 +194,12 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         {
-            let mut st = handler.debugger_state.lock().await;
+            let mut st = handler.default_session.debugger_state.lock().await;
             st.scripts.insert(
                 "mock-script-id".to_string(),
                 ScriptInfo {

@@ -11,6 +11,8 @@ use serde_json::json;
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct InspectDomTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Text pattern to search for in the DOM (case-sensitive). Constraints: any string. Interactions: when provided, returns context snippet instead of full HTML. Defaults to: None (returns full HTML if omitted).
     pub query: Option<String>,
     /// Characters to include before the match. Constraints: non-negative integer. Interactions: only applies if 'query' provided. Defaults to: 200.
@@ -27,8 +29,9 @@ impl InspectDomTool {
         let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let args: InspectDomTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
 
-        let mut client_lock = handler.get_or_connect().await?;
+        let mut client_lock = session.get_or_connect().await?;
         let cdp_client = client_lock.as_mut().unwrap();
 
         let result = cdp_client
@@ -109,7 +112,9 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "inspect_dom",
@@ -130,7 +135,9 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "inspect_dom",
@@ -156,7 +163,9 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "inspect_dom",

@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use cdp_browser_lite::browser::Browser as RealBrowserInner;
 use cdp_browser_lite::{BrowserConfig, BrowserError, CdpClient};
 
 use crate::chrome_mcp_handler::chrome_instance::launch::{LaunchParams, LaunchPlan};
@@ -75,7 +74,6 @@ impl crate::chrome_mcp_handler::chrome_instance::ChromeManager for CdpBrowserMan
         self.params.set_features(features);
     }
 
-    #[cfg(test)]
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -96,42 +94,58 @@ pub(crate) trait BrowserLauncher: Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
-pub(crate) struct RealBrowser(RealBrowserInner);
+pub(crate) struct RealBrowser {
+    browser: std::sync::Arc<cdp_browser_lite::Browser>,
+    id: cdp_browser_lite::BrowserId,
+    pool: std::sync::Arc<cdp_browser_lite::BrowserPool>,
+}
 
 #[async_trait]
 impl ManagedBrowser for RealBrowser {
     async fn resolved_port(&self) -> u16 {
-        self.0.debug_address().await.1
+        self.browser.debug_address().await.1
     }
 
     async fn is_alive(&self) -> bool {
-        self.0.is_alive().await
+        self.browser.is_alive().await
     }
 
     async fn client(&self) -> anyhow::Result<CdpClient> {
-        self.0
+        self.browser
             .client()
             .await
             .map_err(|e: BrowserError| anyhow::anyhow!(e.to_string()))
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
-        self.0
-            .stop()
+        self.pool
+            .close(self.id)
             .await
             .map_err(|e: BrowserError| anyhow::anyhow!(e.to_string()))
     }
 }
 
-pub(crate) struct RealLauncher;
+pub(crate) struct RealLauncher {
+    pub(crate) pool: std::sync::Arc<cdp_browser_lite::BrowserPool>,
+}
 
 #[async_trait]
 impl BrowserLauncher for RealLauncher {
     async fn launch(&self, config: BrowserConfig) -> anyhow::Result<Box<dyn ManagedBrowser>> {
-        let browser = RealBrowserInner::ensure(config)
+        let id = self
+            .pool
+            .open(config)
             .await
             .map_err(|e: BrowserError| anyhow::anyhow!(e.to_string()))?;
-        Ok(Box::new(RealBrowser(browser)))
+        let browser = self.pool.get(id).await;
+        let Some(browser) = browser else {
+            return Err(anyhow::anyhow!("browser entry missing for {:?}", id));
+        };
+        Ok(Box::new(RealBrowser {
+            browser,
+            id,
+            pool: self.pool.clone(),
+        }))
     }
 
     #[cfg(test)]

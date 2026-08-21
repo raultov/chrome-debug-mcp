@@ -15,13 +15,6 @@ pub trait ChromeManager: Send + Sync {
     async fn ensure_instance(&mut self) -> anyhow::Result<()>;
     async fn stop_instance(&mut self) -> anyhow::Result<()>;
     async fn client(&self) -> anyhow::Result<CdpClient>;
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Phase 1 removed the only production caller per spec §4.1; the trait signature is preserved for test observability (Phase 3 unit tests call it via CdpBrowserManager)"
-        )
-    )]
     fn get_port(&self) -> u16;
     fn set_proxy(&mut self, proxy: Option<String>);
     /// Replaces the capability presets applied on the next launch. Like
@@ -29,17 +22,21 @@ pub trait ChromeManager: Send + Sync {
     fn set_features(&mut self, features: Vec<ChromeFeature>);
     /// Returns the currently configured capability presets.
     fn features(&self) -> &[ChromeFeature];
-    #[cfg(test)]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "required for downcasting MockChromeManager in tests"
+        )
+    )]
     fn as_any(&self) -> &dyn std::any::Any;
 }
 
-#[cfg(test)]
 pub struct MockChromeManager {
     port: u16,
     features: Vec<ChromeFeature>,
 }
 
-#[cfg(test)]
 impl MockChromeManager {
     pub fn new(port: u16) -> Self {
         Self {
@@ -49,7 +46,6 @@ impl MockChromeManager {
     }
 }
 
-#[cfg(test)]
 #[async_trait]
 impl ChromeManager for MockChromeManager {
     async fn ensure_instance(&mut self) -> anyhow::Result<()> {
@@ -111,3 +107,8 @@ mod tests {
         assert!(res.is_ok(), "command should succeed: {:?}", res.err());
     }
 }
+pub mod bdd_tests;
+pub mod close_instance;
+pub mod list_instances;
+pub mod open_instance;
+pub mod registry;

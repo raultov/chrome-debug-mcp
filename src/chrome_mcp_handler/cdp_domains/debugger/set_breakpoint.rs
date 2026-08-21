@@ -11,6 +11,8 @@ use serde_json::json;
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct SetBreakpointTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Script hash to identify the target script. Constraints: one of 'script_hash', 'script_id', or 'url' must be provided. Defaults to: None.
     pub script_hash: Option<String>,
     /// Script ID (from Debugger.scriptParsed event). Constraints: one of 'script_hash', 'script_id', or 'url' must be provided. Interactions: mutually exclusive with 'script_hash' and 'url' (first match wins). Defaults to: None.
@@ -31,6 +33,7 @@ impl SetBreakpointTool {
         let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let args: SetBreakpointTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
 
         if args.script_id.is_none() && args.url.is_none() && args.script_hash.is_none() {
             return Err(CallToolError::from_message(
@@ -38,7 +41,7 @@ impl SetBreakpointTool {
             ));
         }
 
-        let mut client_lock = handler.get_or_connect().await?;
+        let mut client_lock = session.get_or_connect().await?;
         let cdp_client = client_lock.as_mut().unwrap();
 
         let response = if let Some(script_id) = args.script_id {
@@ -135,7 +138,9 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "set_breakpoint",

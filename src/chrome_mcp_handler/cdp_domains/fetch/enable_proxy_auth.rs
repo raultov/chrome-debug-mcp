@@ -14,6 +14,8 @@ use tokio_stream::StreamExt;
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct EnableProxyAuthTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Proxy authentication username. Constraints: non-empty string. Interactions: paired with 'password'; sent to proxy server on auth challenge.
     pub username: String,
     /// Proxy authentication password. Constraints: non-empty string. Interactions: paired with 'username'; sent to proxy server on auth challenge.
@@ -35,13 +37,14 @@ impl EnableProxyAuthTool {
             params.arguments.unwrap_or_default(),
         ))
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
+        let session = handler.session(tool.instance_id.clone()).await?;
 
         let prewarm_url = tool
             .prewarm_url
             .clone()
             .unwrap_or_else(|| "http://api.ipify.org?format=json".to_string());
 
-        let mut client_lock = handler.get_or_connect().await?;
+        let mut client_lock = session.get_or_connect().await?;
         if let Some(client) = client_lock.as_mut() {
             let resource_type = tool
                 .resource_type
@@ -214,7 +217,9 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "enable_proxy_auth",

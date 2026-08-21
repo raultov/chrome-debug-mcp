@@ -10,6 +10,8 @@ use rust_mcp_sdk::{
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct SendCdpCommandTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// CDP protocol method name (e.g., 'DOM.getDocument', 'Runtime.evaluate'). Constraints: valid CDP domain.method format. Interactions: method must be recognized by Chrome protocol version.
     pub method: String,
     /// JSON-formatted parameters for the CDP command. Constraints: valid JSON object string. Interactions: Page.navigate URLs subject to local-only restrictions; empty string or '{}' for no parameters. Defaults to: None.
@@ -26,6 +28,7 @@ impl SendCdpCommandTool {
             params.arguments.unwrap_or_default(),
         ))
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
+        let session = handler.session(tool.instance_id.clone()).await?;
 
         let parsed_params: serde_json::Value = match &tool.params {
             Some(s) if !s.trim().is_empty() => serde_json::from_str(s).map_err(|e| {
@@ -45,11 +48,11 @@ impl SendCdpCommandTool {
             )));
         }
 
-        let mut client_lock = handler.get_or_connect().await?;
+        let mut client_lock = session.get_or_connect().await?;
         if let Some(client) = client_lock.as_mut() {
             // Extract domain from method (e.g., "DOM" from "DOM.getDocument")
             if let Some(domain) = tool.method.split('.').next() {
-                super::ensure_domain_listener(client, &handler.custom_state, domain).await;
+                super::ensure_domain_listener(client, &session.custom_state, domain).await;
             }
 
             let response = client.send_raw_command(&tool.method, parsed_params).await;
@@ -105,7 +108,9 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "send_cdp_command",
@@ -129,7 +134,7 @@ mod tests {
         );
 
         // Verify active_domains has 'Runtime'
-        let st = handler.custom_state.lock().await;
+        let st = handler.default_session.custom_state.lock().await;
         assert!(st.active_domains.contains("Runtime"));
     }
 
@@ -166,9 +171,10 @@ mod tests {
         .unwrap();
 
         let port = spawn_mock_chrome_server().await;
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        let mut handler_local2 = ChromeMcpHandler::new_test_with_port(port);
+        handler_local2.local_only = true;
 
-        let result_local = SendCdpCommandTool::handle(params_local, &handler).await;
+        let result_local = SendCdpCommandTool::handle(params_local, &handler_local2).await;
         assert!(
             result_local.is_ok(),
             "Local navigation should succeed: {:?}",

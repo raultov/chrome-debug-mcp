@@ -13,6 +13,8 @@ use tokio::sync::mpsc;
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct ProfilePagePerformanceTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Recording duration in milliseconds. Constraints: integer between 500 and 15000. Interactions: longer duration captures more data; use 3000-5000 for typical pages. Defaults to: 3000.
     #[serde(default)]
     pub duration_ms: Option<u64>,
@@ -53,12 +55,13 @@ impl ProfilePagePerformanceTool {
         let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let args: ProfilePagePerformanceTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
 
         let duration = args.duration_ms.unwrap_or(3000).clamp(500, 15000);
         let action = args.action.unwrap_or_else(|| "none".to_string());
         let disable_cache = args.disable_cache.unwrap_or(false);
 
-        let mut client_lock = handler.get_or_connect().await?;
+        let mut client_lock = session.get_or_connect().await?;
         let cdp_client = client_lock.as_mut().ok_or_else(|| {
             CallToolError::from_message("Chrome connection is not established".to_string())
         })?;
@@ -73,7 +76,7 @@ impl ProfilePagePerformanceTool {
         // 2. Prepare to listen for completion
         let (tx, mut rx) = mpsc::channel(1);
         {
-            let mut st = handler.tracing_state.lock().await;
+            let mut st = handler.default_session.tracing_state.lock().await;
             st.completion_channel = Some(tx);
         }
 

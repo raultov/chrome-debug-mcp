@@ -24,8 +24,9 @@ use cdp_domains::performance::get_performance_metrics::GetPerformanceMetricsTool
 use cdp_domains::runtime::evaluate_js::EvaluateJsTool;
 use cdp_domains::runtime::inspect_dom::InspectDomTool;
 use cdp_domains::tracing::profile_page_performance::ProfilePagePerformanceTool;
-use chrome_instance::cdp_browser_manager::{CdpBrowserManager, RealLauncher};
-use chrome_instance::launch::LaunchParams;
+use chrome_instance::close_instance::CloseInstanceTool;
+use chrome_instance::list_instances::ListInstancesTool;
+use chrome_instance::open_instance::OpenInstanceTool;
 use chrome_instance::restart_chrome::RestartChromeTool;
 use chrome_instance::stop_chrome::StopChromeTool;
 
@@ -88,7 +89,7 @@ pub(crate) struct CustomState {
     pub active_domains: std::collections::HashSet<String>,
 }
 
-pub struct ChromeMcpHandler {
+pub(crate) struct BrowserSession {
     pub(crate) client: Arc<Mutex<Option<CdpClient>>>,
     pub(crate) debugger_state: Arc<Mutex<DebuggerState>>,
     pub(crate) network_state: Arc<Mutex<NetworkState>>,
@@ -97,10 +98,160 @@ pub struct ChromeMcpHandler {
     pub(crate) custom_state: Arc<Mutex<CustomState>>,
     pub(crate) webmcp_state: Arc<Mutex<cdp_domains::webmcp::WebmcpState>>,
     pub(crate) chrome_manager: Arc<Mutex<dyn chrome_instance::ChromeManager>>,
+}
+
+impl BrowserSession {
+    pub(crate) async fn get_or_connect(
+        &self,
+    ) -> std::result::Result<tokio::sync::MutexGuard<'_, Option<CdpClient>>, CallToolError> {
+        // First ensure instance is running
+        {
+            let mut manager = self.chrome_manager.lock().await;
+            manager.ensure_instance().await.map_err(|e| {
+                CallToolError::from_message(format!("Failed to ensure Chrome instance: {}", e))
+            })?;
+        }
+
+        let mut client_lock = self.client.lock().await;
+        if client_lock.is_none() {
+            let client_res = {
+                let manager = self.chrome_manager.lock().await;
+                manager.client().await
+            };
+            match client_res {
+                Ok(mut client) => {
+                    let _ = client
+                        .send_raw_command("Runtime.enable", cdp_browser_lite::NoParams)
+                        .await;
+                    let _ = client
+                        .send_raw_command("Page.enable", cdp_browser_lite::NoParams)
+                        .await;
+                    let _ = client
+                        .send_raw_command("Network.enable", cdp_browser_lite::NoParams)
+                        .await;
+                    let _ = client
+                        .send_raw_command("Log.enable", cdp_browser_lite::NoParams)
+                        .await;
+                    let _ = client
+                        .send_raw_command("Performance.enable", cdp_browser_lite::NoParams)
+                        .await;
+
+                    let has_webmcp = {
+                        let manager = self.chrome_manager.lock().await;
+                        manager
+                            .features()
+                            .contains(&chrome_instance::launch::ChromeFeature::WebMcp)
+                    };
+                    if has_webmcp {
+                        let enable_res = client
+                            .send_raw_command("WebMCP.enable", cdp_browser_lite::NoParams)
+                            .await;
+                        let mut webmcp_st = self.webmcp_state.lock().await;
+                        if enable_res.is_ok() {
+                            webmcp_st.availability =
+                                cdp_domains::webmcp::WebmcpAvailability::Enabled;
+                        } else {
+                            webmcp_st.availability =
+                                cdp_domains::webmcp::WebmcpAvailability::Unsupported;
+                        }
+                    } else {
+                        let mut webmcp_st = self.webmcp_state.lock().await;
+                        webmcp_st.availability =
+                            cdp_domains::webmcp::WebmcpAvailability::NotRequested;
+                    }
+
+                    cdp_domains::debugger::start_debugger_listener(
+                        &mut client,
+                        self.debugger_state.clone(),
+                    );
+
+                    cdp_domains::network::start_network_listener(
+                        &mut client,
+                        self.network_state.clone(),
+                    );
+
+                    cdp_domains::log::start_log_listener(&mut client, self.log_state.clone());
+                    cdp_domains::tracing::start_tracing_listener(
+                        &mut client,
+                        self.tracing_state.clone(),
+                    );
+                    if has_webmcp {
+                        cdp_domains::webmcp::start_webmcp_listener(
+                            &mut client,
+                            self.webmcp_state.clone(),
+                        );
+                    }
+
+                    let _ = client
+                        .send_raw_command("Debugger.enable", cdp_browser_lite::NoParams)
+                        .await;
+
+                    *client_lock = Some(client);
+                }
+                Err(e) => {
+                    return Err(CallToolError::from_message(format!(
+                        "Failed to connect to Chrome: {}",
+                        e
+                    )));
+                }
+            }
+        }
+        Ok(client_lock)
+    }
+}
+
+pub struct ChromeMcpHandler {
+    pub(crate) default_session: Arc<BrowserSession>,
+    pub(crate) registry: Arc<chrome_instance::registry::Registry>,
+    pub(crate) pool: Arc<cdp_browser_lite::BrowserPool>,
+    pub(crate) base_params: chrome_instance::launch::LaunchParams,
     pub(crate) local_only: bool,
+    pub(crate) is_test: bool,
 }
 
 impl ChromeMcpHandler {
+    pub async fn session(
+        &self,
+        id: Option<String>,
+    ) -> std::result::Result<Arc<BrowserSession>, CallToolError> {
+        let id = id.unwrap_or_else(|| "default".to_string());
+        if let Some(session) = self.registry.get_session(&id) {
+            Ok(session)
+        } else if id == "default" {
+            // Lazily add the default session
+            let default_features = {
+                let mgr = self.default_session.chrome_manager.lock().await;
+                mgr.features()
+                    .iter()
+                    .map(|f| f.as_name().to_string())
+                    .collect::<Vec<_>>()
+            };
+            let desc = chrome_instance::registry::InstanceDescriptor {
+                id: "default".to_string(),
+                label: None,
+                host: "127.0.0.1".to_string(),
+                port: self.base_params.configured_port(),
+                profile_dir: None,
+                features: default_features,
+                is_default: true,
+            };
+            self.registry
+                .add_session(desc, self.default_session.clone())
+                .map_err(|e| {
+                    CallToolError::from_message(format!(
+                        "Failed to register default session: {}",
+                        e
+                    ))
+                })?;
+            Ok(self.default_session.clone())
+        } else {
+            Err(CallToolError::from_message(format!(
+                "Instance id '{}' not found",
+                id
+            )))
+        }
+    }
+
     pub fn new_with_params(
         host: String,
         port: u16,
@@ -109,33 +260,121 @@ impl ChromeMcpHandler {
         headless: bool,
         user_profile: bool,
     ) -> Self {
-        let params = LaunchParams::new(host, port, enable_automation, headless, user_profile);
-        let manager = CdpBrowserManager::new(params, Box::new(RealLauncher));
+        let params = chrome_instance::launch::LaunchParams::new(
+            host,
+            port,
+            enable_automation,
+            headless,
+            user_profile,
+        );
+        let pool = Arc::new(cdp_browser_lite::BrowserPool::new());
+        let registry = Arc::new(chrome_instance::registry::Registry::new(8)); // max 8 instances
+
+        let manager = chrome_instance::cdp_browser_manager::CdpBrowserManager::new(
+            params.clone(),
+            Box::new(chrome_instance::cdp_browser_manager::RealLauncher { pool: pool.clone() }),
+        );
+        let session = Arc::new(BrowserSession {
+            client: Arc::new(tokio::sync::Mutex::new(None)),
+            debugger_state: Arc::new(tokio::sync::Mutex::new(DebuggerState::default())),
+            network_state: Arc::new(tokio::sync::Mutex::new(NetworkState::default())),
+            log_state: Arc::new(tokio::sync::Mutex::new(
+                cdp_domains::log::LogState::default(),
+            )),
+            tracing_state: Arc::new(tokio::sync::Mutex::new(
+                cdp_domains::tracing::TracingState::default(),
+            )),
+            custom_state: Arc::new(tokio::sync::Mutex::new(CustomState::default())),
+            webmcp_state: Arc::new(tokio::sync::Mutex::new(
+                cdp_domains::webmcp::WebmcpState::default(),
+            )),
+            chrome_manager: Arc::new(tokio::sync::Mutex::new(manager)),
+        });
+
+        let default_features = {
+            // Can block, but it's during startup new_with_params
+            // Let's get features from base_params instead to avoid blocking on mutex in constructor
+            params
+                .features()
+                .iter()
+                .map(|f| f.as_name().to_string())
+                .collect::<Vec<_>>()
+        };
+        let desc = chrome_instance::registry::InstanceDescriptor {
+            id: "default".to_string(),
+            label: None,
+            host: "127.0.0.1".to_string(), // approximation
+            port,
+            profile_dir: None, // lazy
+            features: default_features,
+            is_default: true,
+        };
+        registry.register_descriptor(desc);
+
         Self {
-            client: Arc::new(Mutex::new(None)),
-            debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
-            network_state: Arc::new(Mutex::new(NetworkState::default())),
-            log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
-            tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
-            custom_state: Arc::new(Mutex::new(CustomState::default())),
-            webmcp_state: Arc::new(Mutex::new(cdp_domains::webmcp::WebmcpState::default())),
-            chrome_manager: Arc::new(Mutex::new(manager)),
+            default_session: session,
+            registry,
+            pool,
+            base_params: params,
             local_only,
+            is_test: false,
         }
     }
 
     #[cfg(test)]
     pub fn new_test() -> Self {
+        Self::new_test_with_port(9999)
+    }
+
+    #[cfg(test)]
+    pub fn new_test_with_port(port: u16) -> Self {
+        let params = chrome_instance::launch::LaunchParams::new(
+            "127.0.0.1".into(),
+            port,
+            false,
+            false,
+            false,
+        );
+        let pool = Arc::new(cdp_browser_lite::BrowserPool::new());
+        let registry = Arc::new(chrome_instance::registry::Registry::new(8));
+
+        let session = Arc::new(BrowserSession {
+            client: Arc::new(tokio::sync::Mutex::new(None)),
+            debugger_state: Arc::new(tokio::sync::Mutex::new(DebuggerState::default())),
+            network_state: Arc::new(tokio::sync::Mutex::new(NetworkState::default())),
+            log_state: Arc::new(tokio::sync::Mutex::new(
+                cdp_domains::log::LogState::default(),
+            )),
+            tracing_state: Arc::new(tokio::sync::Mutex::new(
+                cdp_domains::tracing::TracingState::default(),
+            )),
+            custom_state: Arc::new(tokio::sync::Mutex::new(CustomState::default())),
+            webmcp_state: Arc::new(tokio::sync::Mutex::new(
+                cdp_domains::webmcp::WebmcpState::default(),
+            )),
+            chrome_manager: Arc::new(tokio::sync::Mutex::new(
+                chrome_instance::MockChromeManager::new(port),
+            )),
+        });
+
+        let desc = chrome_instance::registry::InstanceDescriptor {
+            id: "default".to_string(),
+            label: None,
+            host: "127.0.0.1".to_string(),
+            port,
+            profile_dir: None,
+            features: vec![],
+            is_default: true,
+        };
+        registry.register_descriptor(desc);
+
         Self {
-            client: Arc::new(Mutex::new(None)),
-            debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
-            network_state: Arc::new(Mutex::new(NetworkState::default())),
-            log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
-            tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
-            custom_state: Arc::new(Mutex::new(CustomState::default())),
-            webmcp_state: Arc::new(Mutex::new(cdp_domains::webmcp::WebmcpState::default())),
-            chrome_manager: Arc::new(Mutex::new(chrome_instance::MockChromeManager::new(9999))),
+            default_session: session,
+            registry,
+            pool,
+            base_params: params,
             local_only: false,
+            is_test: true,
         }
     }
 }
@@ -190,94 +429,6 @@ pub(crate) fn find_line_column(source: &str, pattern: &str) -> Option<(u32, u32)
     Some((line_number, column_number))
 }
 
-impl ChromeMcpHandler {
-    pub(crate) async fn get_or_connect(
-        &self,
-    ) -> std::result::Result<tokio::sync::MutexGuard<'_, Option<CdpClient>>, CallToolError> {
-        // First ensure instance is running
-        {
-            let mut manager = self.chrome_manager.lock().await;
-            manager.ensure_instance().await.map_err(|e| {
-                CallToolError::from_message(format!("Failed to ensure Chrome instance: {}", e))
-            })?;
-        }
-
-        let mut client_lock = self.client.lock().await;
-        if client_lock.is_none() {
-            let client_res = {
-                let manager = self.chrome_manager.lock().await;
-                manager.client().await
-            };
-            match client_res {
-                Ok(mut client) => {
-                    let _ = client
-                        .send_raw_command("Runtime.enable", cdp_browser_lite::NoParams)
-                        .await;
-                    let _ = client
-                        .send_raw_command("Page.enable", cdp_browser_lite::NoParams)
-                        .await;
-                    let _ = client
-                        .send_raw_command("Network.enable", cdp_browser_lite::NoParams)
-                        .await;
-                    let _ = client
-                        .send_raw_command("Log.enable", cdp_browser_lite::NoParams)
-                        .await;
-                    let _ = client
-                        .send_raw_command("Performance.enable", cdp_browser_lite::NoParams)
-                        .await;
-
-                    let has_webmcp = {
-                        let manager = self.chrome_manager.lock().await;
-                        manager
-                            .features()
-                            .contains(&chrome_instance::launch::ChromeFeature::WebMcp)
-                    };
-                    if has_webmcp {
-                        let _ = client
-                            .send_raw_command("WebMCP.enable", cdp_browser_lite::NoParams)
-                            .await;
-                    }
-
-                    cdp_domains::debugger::start_debugger_listener(
-                        &mut client,
-                        self.debugger_state.clone(),
-                    );
-
-                    cdp_domains::network::start_network_listener(
-                        &mut client,
-                        self.network_state.clone(),
-                    );
-
-                    cdp_domains::log::start_log_listener(&mut client, self.log_state.clone());
-                    cdp_domains::tracing::start_tracing_listener(
-                        &mut client,
-                        self.tracing_state.clone(),
-                    );
-                    if has_webmcp {
-                        cdp_domains::webmcp::start_webmcp_listener(
-                            &mut client,
-                            self.webmcp_state.clone(),
-                        );
-                    }
-
-                    let _ = client
-                        .send_raw_command("Debugger.enable", cdp_browser_lite::NoParams)
-                        .await;
-
-                    *client_lock = Some(client);
-                }
-                Err(e) => {
-                    return Err(CallToolError::from_message(format!(
-                        "Failed to connect to Chrome: {}",
-                        e
-                    )));
-                }
-            }
-        }
-        Ok(client_lock)
-    }
-}
-
 #[async_trait]
 impl ServerHandler for ChromeMcpHandler {
     async fn handle_list_tools_request(
@@ -304,6 +455,9 @@ impl ServerHandler for ChromeMcpHandler {
                 RemoveBreakpointTool::tool(),
                 RestartChromeTool::tool(),
                 StopChromeTool::tool(),
+                OpenInstanceTool::tool(),
+                ListInstancesTool::tool(),
+                CloseInstanceTool::tool(),
                 GetNetworkLogsTool::tool(),
                 GetConsoleLogsTool::tool(),
                 GetPerformanceMetricsTool::tool(),
@@ -360,6 +514,12 @@ impl ServerHandler for ChromeMcpHandler {
             RestartChromeTool::handle(params, self).await
         } else if params.name == "stop_chrome" {
             StopChromeTool::handle(params, self).await
+        } else if params.name == "open_instance" {
+            OpenInstanceTool::handle(params, self).await
+        } else if params.name == "list_instances" {
+            ListInstancesTool::handle(params, self).await
+        } else if params.name == "close_instance" {
+            CloseInstanceTool::handle(params, self).await
         } else if params.name == "get_network_logs" {
             GetNetworkLogsTool::handle(params, self).await
         } else if params.name == "get_console_logs" {
@@ -538,7 +698,7 @@ mod tests {
         let tools = result.unwrap().tools;
 
         // Ensure all registered tools are present
-        assert_eq!(tools.len(), 28);
+        assert_eq!(tools.len(), 31);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"scroll".to_string()));
         assert!(tool_names.contains(&"capture_screenshot".to_string()));

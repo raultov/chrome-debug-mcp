@@ -11,6 +11,8 @@ use rust_mcp_sdk::{
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct RestartChromeTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Proxy server URL (e.g., 'http://proxy.example.com:8080'). Constraints: valid proxy URL with protocol and port. Interactions: applied to new Chrome instance; requires 'enable_proxy_auth' for authenticated proxies. Defaults to: None (no proxy).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy_server: Option<String>,
@@ -30,11 +32,12 @@ impl RestartChromeTool {
         ))
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
 
-        let mut manager = handler.chrome_manager.lock().await;
+        let session = handler.session(tool.instance_id.clone()).await?;
+        let mut manager = session.chrome_manager.lock().await;
 
         // Reset the client connection before stopping/starting
         {
-            let mut client_lock = handler.client.lock().await;
+            let mut client_lock = session.client.lock().await;
             *client_lock = None;
         }
 
@@ -47,15 +50,27 @@ impl RestartChromeTool {
 
         manager.set_proxy(tool.proxy_server);
 
-        let features = tool.features.unwrap_or_default();
+        let features = tool.features.unwrap_or_else(|| manager.features().to_vec());
         let summary = describe_features(&features);
-        manager.set_features(features);
+        manager.set_features(features.clone());
 
         if let Err(e) = manager.ensure_instance().await {
             return Err(CallToolError::from_message(format!(
                 "Failed to start Chrome: {}",
                 e
             )));
+        }
+
+        // Update features in registry descriptor if descriptor exists
+        let instance_id_str = tool
+            .instance_id
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
+        let descriptors_list = handler.registry.list_descriptors();
+        if let Some(desc) = descriptors_list.iter().find(|d| d.id == instance_id_str) {
+            let mut updated_desc = desc.clone();
+            updated_desc.features = features.iter().map(|f| f.as_name().to_string()).collect();
+            handler.registry.register_descriptor(updated_desc);
         }
 
         Ok(CallToolResult::text_content(vec![
@@ -106,11 +121,13 @@ mod tests {
     #[tokio::test]
     async fn test_restart_chrome_handle() {
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(9999)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(9999)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "restart_chrome",
-            "arguments": {}
+            "arguments": { "instance_id": "default" }
         }))
         .unwrap();
 
@@ -130,11 +147,13 @@ mod tests {
     #[tokio::test]
     async fn given_known_feature_when_handling_then_manager_receives_it() {
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(9999)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(9999)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "restart_chrome",
-            "arguments": { "features": ["WEB_MCP"] }
+            "arguments": { "instance_id": "default", "features": ["WEB_MCP"] }
         }))
         .unwrap();
 
@@ -142,7 +161,7 @@ mod tests {
             .await
             .expect("handle must succeed");
 
-        let manager = handler.chrome_manager.lock().await;
+        let manager = handler.default_session.chrome_manager.lock().await;
         let mock = manager
             .as_any()
             .downcast_ref::<MockChromeManager>()
@@ -170,11 +189,13 @@ mod tests {
     #[tokio::test]
     async fn given_no_features_when_handling_then_response_reports_none() {
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(9999)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(9999)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "restart_chrome",
-            "arguments": {}
+            "arguments": { "instance_id": "default" }
         }))
         .unwrap();
 

@@ -124,7 +124,12 @@ async fn wait_for_lock(port: u16, timeout: Duration) -> bool {
 #[ignore = "requires a real Chrome installation"]
 async fn given_real_chrome_when_ensure_and_client_then_browser_version_responds() {
     let port = TEST_PORT_BASE;
-    let mut mgr = CdpBrowserManager::new(local_params(port), Box::new(RealLauncher));
+    let mut mgr = CdpBrowserManager::new(
+        local_params(port),
+        Box::new(RealLauncher {
+            pool: std::sync::Arc::new(cdp_browser_lite::BrowserPool::new()),
+        }),
+    );
     mgr.ensure_instance()
         .await
         .expect("ensure_instance must succeed against real Chrome");
@@ -142,7 +147,12 @@ async fn given_real_chrome_when_ensure_and_client_then_browser_version_responds(
 #[ignore = "requires a real Chrome installation"]
 async fn given_managed_instance_when_stop_instance_then_process_is_gone() {
     let port = TEST_PORT_BASE + 1;
-    let mut mgr = CdpBrowserManager::new(local_params(port), Box::new(RealLauncher));
+    let mut mgr = CdpBrowserManager::new(
+        local_params(port),
+        Box::new(RealLauncher {
+            pool: std::sync::Arc::new(cdp_browser_lite::BrowserPool::new()),
+        }),
+    );
     mgr.ensure_instance()
         .await
         .expect("ensure_instance must succeed");
@@ -164,7 +174,12 @@ async fn given_managed_instance_when_stop_instance_then_process_is_gone() {
 #[ignore = "requires a real Chrome installation; covers D1 / B16"]
 async fn given_managed_instance_when_manager_dropped_then_process_is_gone() {
     let port = TEST_PORT_BASE + 2;
-    let mut mgr = CdpBrowserManager::new(local_params(port), Box::new(RealLauncher));
+    let mut mgr = CdpBrowserManager::new(
+        local_params(port),
+        Box::new(RealLauncher {
+            pool: std::sync::Arc::new(cdp_browser_lite::BrowserPool::new()),
+        }),
+    );
     mgr.ensure_instance()
         .await
         .expect("ensure_instance must succeed");
@@ -189,7 +204,12 @@ async fn given_attached_instance_when_stop_instance_then_process_survives() {
         wait_for_cdp_ready("127.0.0.1", port, TIMEOUT_30S).await,
         "user-spawned Chrome must be CDP-ready on port {port}"
     );
-    let mut mgr = CdpBrowserManager::new(local_params(port), Box::new(RealLauncher));
+    let mut mgr = CdpBrowserManager::new(
+        local_params(port),
+        Box::new(RealLauncher {
+            pool: std::sync::Arc::new(cdp_browser_lite::BrowserPool::new()),
+        }),
+    );
     mgr.ensure_instance()
         .await
         .expect("ensure_instance must attach to user Chrome");
@@ -234,7 +254,12 @@ fn spawn_user_chrome_on(port: u16) -> tokio::process::Child {
 async fn given_managed_instance_on_configured_port_when_second_manager_ensures_then_uses_different_port_and_profile()
  {
     let port = TEST_PORT_BASE + 4;
-    let mut first = CdpBrowserManager::new(local_params(port), Box::new(RealLauncher));
+    let mut first = CdpBrowserManager::new(
+        local_params(port),
+        Box::new(RealLauncher {
+            pool: std::sync::Arc::new(cdp_browser_lite::BrowserPool::new()),
+        }),
+    );
     first
         .ensure_instance()
         .await
@@ -245,7 +270,12 @@ async fn given_managed_instance_on_configured_port_when_second_manager_ensures_t
         "managed instance must leave a SingletonLock in its profile"
     );
 
-    let mut second = CdpBrowserManager::new(local_params(port), Box::new(RealLauncher));
+    let mut second = CdpBrowserManager::new(
+        local_params(port),
+        Box::new(RealLauncher {
+            pool: std::sync::Arc::new(cdp_browser_lite::BrowserPool::new()),
+        }),
+    );
     second
         .ensure_instance()
         .await
@@ -273,7 +303,12 @@ async fn given_managed_instance_on_configured_port_when_second_manager_ensures_t
 async fn given_managed_instance_on_configured_port_when_second_manager_ensures_then_existing_singleton_lock_survives()
  {
     let port = TEST_PORT_BASE + 5;
-    let mut first = CdpBrowserManager::new(local_params(port), Box::new(RealLauncher));
+    let mut first = CdpBrowserManager::new(
+        local_params(port),
+        Box::new(RealLauncher {
+            pool: std::sync::Arc::new(cdp_browser_lite::BrowserPool::new()),
+        }),
+    );
     first
         .ensure_instance()
         .await
@@ -290,7 +325,12 @@ async fn given_managed_instance_on_configured_port_when_second_manager_ensures_t
         .expect("lock must be readable")
         .ino();
 
-    let mut second = CdpBrowserManager::new(local_params(port), Box::new(RealLauncher));
+    let mut second = CdpBrowserManager::new(
+        local_params(port),
+        Box::new(RealLauncher {
+            pool: std::sync::Arc::new(cdp_browser_lite::BrowserPool::new()),
+        }),
+    );
     let _ = second.ensure_instance().await;
     assert!(
         std::fs::symlink_metadata(&lock_before).is_ok(),

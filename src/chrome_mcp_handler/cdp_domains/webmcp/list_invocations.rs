@@ -10,6 +10,8 @@ use rust_mcp_sdk::{
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct ListWebmcpInvocationsTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Optional filter: only return invocations with this status. Constraints: one of 'Pending', 'Completed', 'Error', 'Canceled'. Defaults to: None (all invocations).
     pub status: Option<String>,
 }
@@ -35,7 +37,8 @@ impl ListWebmcpInvocationsTool {
             }
         }
 
-        let st = handler.webmcp_state.lock().await;
+        let session = handler.session(tool.instance_id.clone()).await?;
+        let st = session.webmcp_state.lock().await;
         let mut invocations: Vec<serde_json::Value> = Vec::new();
 
         for invocation in st.invocations.values() {
@@ -100,7 +103,7 @@ mod tests {
         let handler = ChromeMcpHandler::new_test();
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "webmcp_list_invocations",
-            "arguments": {}
+            "arguments": { "instance_id": "default" }
         }))
         .unwrap();
 
@@ -115,7 +118,7 @@ mod tests {
     async fn test_list_invocations_all_and_filtered() {
         let handler = ChromeMcpHandler::new_test();
         {
-            let mut st = handler.webmcp_state.lock().await;
+            let mut st = handler.default_session.webmcp_state.lock().await;
             st.invocations
                 .insert("a".to_string(), make_invocation("a", None));
             st.invocations
@@ -125,7 +128,7 @@ mod tests {
         // No filter: both appear
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "webmcp_list_invocations",
-            "arguments": {}
+            "arguments": { "instance_id": "default" }
         }))
         .unwrap();
         let result = ListWebmcpInvocationsTool::handle(params, &handler)
@@ -142,7 +145,7 @@ mod tests {
         // Filter Pending: only "a"
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "webmcp_list_invocations",
-            "arguments": { "status": "Pending" }
+            "arguments": { "instance_id": "default", "status": "Pending" }
         }))
         .unwrap();
         let result = ListWebmcpInvocationsTool::handle(params, &handler)
@@ -159,7 +162,7 @@ mod tests {
         let handler = ChromeMcpHandler::new_test();
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "webmcp_list_invocations",
-            "arguments": { "status": "Running" }
+            "arguments": { "instance_id": "default", "status": "Running" }
         }))
         .unwrap();
 

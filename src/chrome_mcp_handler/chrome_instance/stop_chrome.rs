@@ -9,18 +9,27 @@ use rust_mcp_sdk::{
     description = "Gracefully terminates the managed Chrome instance and closes all debugging connections. Side effects: destructive - kills Chrome process; all open tabs closed; unsaved data lost. Prerequisites: Chrome instance must be running. Returns: termination success confirmation. Use this to clean up resources, prevent zombie processes, or end debugging session. Alternatives: 'restart_chrome' to restart instead of stop."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
-pub struct StopChromeTool {}
+pub struct StopChromeTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
+}
 
 impl StopChromeTool {
     pub async fn handle(
-        _params: CallToolRequestParams,
+        params: CallToolRequestParams,
         handler: &ChromeMcpHandler,
     ) -> Result<CallToolResult, CallToolError> {
-        let mut manager = handler.chrome_manager.lock().await;
+        let tool: StopChromeTool = serde_json::from_value(serde_json::Value::Object(
+            params.arguments.unwrap_or_default(),
+        ))
+        .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
+
+        let session = handler.session(tool.instance_id.clone()).await?;
+        let mut manager = session.chrome_manager.lock().await;
 
         // Reset the client connection before stopping
         {
-            let mut client_lock = handler.client.lock().await;
+            let mut client_lock = session.client.lock().await;
             *client_lock = None;
         }
 
@@ -64,11 +73,13 @@ mod tests {
     #[tokio::test]
     async fn test_stop_chrome_handle() {
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(9999)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(9999)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "stop_chrome",
-            "arguments": {}
+            "arguments": { "instance_id": "default" }
         }))
         .unwrap();
 

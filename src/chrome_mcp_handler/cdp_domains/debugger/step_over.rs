@@ -9,14 +9,22 @@ use rust_mcp_sdk::{
     description = "Executes the current line of code without entering function calls, pausing at the next line. Side effects: advances debugger execution state. Prerequisites: requires an active, paused debugger session. Returns: confirmation of step execution. Use this to skip function internals during debugging. Alternatives: use 'resume' to continue full execution, 'step_over' enters functions, or 'evaluate_on_call_frame' to inspect state without stepping."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
-pub struct StepOverTool {}
+pub struct StepOverTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
+}
 
 impl StepOverTool {
     pub async fn handle(
-        _params: CallToolRequestParams,
+        params: CallToolRequestParams,
         handler: &ChromeMcpHandler,
     ) -> Result<CallToolResult, CallToolError> {
-        let mut client_lock = handler.get_or_connect().await?;
+        let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
+        let args: StepOverTool = serde_json::from_value(args_value)
+            .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
+
+        let mut client_lock = session.get_or_connect().await?;
         let cdp_client = client_lock.as_mut().unwrap();
 
         let _ = cdp_client
@@ -60,7 +68,9 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "step_over",

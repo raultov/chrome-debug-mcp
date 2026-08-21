@@ -10,6 +10,8 @@ use rust_mcp_sdk::{
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct GetConsoleLogsTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Clear console cache after returning logs. Constraints: boolean. Interactions: when true, subsequent calls only return new messages. Defaults to: false.
     #[serde(default)]
     pub clear: Option<bool>,
@@ -27,9 +29,10 @@ impl GetConsoleLogsTool {
         let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let args: GetConsoleLogsTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
 
         let mut logs = {
-            let mut st = handler.log_state.lock().await;
+            let mut st = session.log_state.lock().await;
             let current_logs = st.messages.clone();
             if args.clear.unwrap_or(false) {
                 st.messages.clear();

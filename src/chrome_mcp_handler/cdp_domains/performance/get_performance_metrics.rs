@@ -9,14 +9,22 @@ use rust_mcp_sdk::{
     description = "Captures runtime performance metrics including JS heap size, DOM node count, and layout timing. Side effects: none (read-only snapshot). Prerequisites: requires an active Chrome tab. Returns: JSON object mapping metric names to numeric values (e.g., JSHeapUsedSize, LayoutCount). Use this to monitor memory usage, detect memory leaks, or profile performance. Alternatives: 'profile_page_performance' for detailed tracing, browser DevTools Performance tab."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
-pub struct GetPerformanceMetricsTool {}
+pub struct GetPerformanceMetricsTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
+}
 
 impl GetPerformanceMetricsTool {
     pub async fn handle(
-        _params: CallToolRequestParams,
+        params: CallToolRequestParams,
         handler: &ChromeMcpHandler,
     ) -> Result<CallToolResult, CallToolError> {
-        let mut client_lock = handler.get_or_connect().await?;
+        let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
+        let args: GetPerformanceMetricsTool = serde_json::from_value(args_value)
+            .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
+
+        let mut client_lock = session.get_or_connect().await?;
         let cdp_client = client_lock.as_mut().ok_or_else(|| {
             CallToolError::from_message("Chrome connection is not established".to_string())
         })?;
@@ -59,6 +67,7 @@ mod tests {
     use crate::chrome_mcp_handler::cdp_domains::tests::spawn_mock_chrome_server;
     use crate::chrome_mcp_handler::chrome_instance::MockChromeManager;
     use serde_json::json;
+    use std::sync::Arc;
 
     #[test]
     fn test_get_performance_metrics_tool_deserialization() {
@@ -71,7 +80,9 @@ mod tests {
     async fn test_get_performance_metrics_handle() {
         let port = spawn_mock_chrome_server().await;
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager =
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager =
             std::sync::Arc::new(tokio::sync::Mutex::new(MockChromeManager::new(port)));
 
         let params = CallToolRequestParams {

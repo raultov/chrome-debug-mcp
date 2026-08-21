@@ -10,6 +10,8 @@ use rust_mcp_sdk::{
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct GetCustomEventsTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Filter events by CDP method name (case-sensitive). Constraints: string matching format 'Domain.eventName'. Interactions: when omitted, returns all events. Defaults to: None (no filtering).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter_method: Option<String>,
@@ -32,7 +34,8 @@ impl GetCustomEventsTool {
         ))
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
 
-        let st = handler.custom_state.lock().await;
+        let session = handler.session(tool.instance_id.clone()).await?;
+        let st = session.custom_state.lock().await;
         let filtered_events: Vec<_> = st
             .events
             .iter()
@@ -94,7 +97,7 @@ mod tests {
     async fn test_get_custom_events_handle() {
         let handler = ChromeMcpHandler::new_test();
         {
-            let mut st = handler.custom_state.lock().await;
+            let mut st = handler.default_session.custom_state.lock().await;
             st.events.push_back(CustomEvent {
                 method: "Target.targetCreated".to_string(),
                 params: json!({"targetId": "1"}),
@@ -110,6 +113,7 @@ mod tests {
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "get_custom_events",
             "arguments": {
+                "instance_id": "default",
                 "filter_method": "Target.targetCreated"
             }
         }))

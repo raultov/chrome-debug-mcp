@@ -60,16 +60,17 @@ pub(crate) struct LaunchParams {
     port: u16,
     headless: bool,
     enable_automation: bool,
-    user_profile: bool,
+    pub(crate) user_profile: bool,
+    pub(crate) secondary: bool,
     proxy: Option<String>,
     features: Vec<ChromeFeature>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LaunchPlan {
-    mode: LaunchMode,
-    profile: ProfileMode,
-    extra_args: Vec<String>,
+    pub(crate) mode: LaunchMode,
+    pub(crate) profile: ProfileMode,
+    pub(crate) extra_args: Vec<String>,
 }
 
 impl LaunchParams {
@@ -86,6 +87,7 @@ impl LaunchParams {
             enable_automation,
             headless,
             user_profile,
+            secondary: false,
             proxy: None,
             features: Vec::new(),
         }
@@ -108,7 +110,9 @@ impl LaunchParams {
     }
 
     pub(crate) fn plan(&self) -> LaunchPlan {
-        let mode = if is_local_host(&self.host) {
+        let mode = if self.secondary {
+            LaunchMode::LaunchNew
+        } else if is_local_host(&self.host) {
             LaunchMode::Auto
         } else {
             LaunchMode::AttachOnly
@@ -121,6 +125,9 @@ impl LaunchParams {
                 prefix: PROFILE_ROOT_PREFIX.to_string(),
             }
         };
+
+        let _port = if self.secondary { 0 } else { self.port };
+
         let mut extra_args = if self.enable_automation {
             Vec::new()
         } else {
@@ -140,11 +147,15 @@ impl LaunchParams {
         }
     }
 
+    pub(crate) fn resolve_port(&self) -> u16 {
+        if self.secondary { 0 } else { self.port }
+    }
+
     pub(crate) fn to_config(&self, plan: &LaunchPlan) -> BrowserConfig {
         let mut builder = BrowserConfig::builder()
             .mode(plan.mode.clone())
             .host(self.host.clone())
-            .port(self.port)
+            .port(self.resolve_port())
             .headless(self.headless)
             .enable_automation(self.enable_automation)
             .profile(plan.profile.clone())
@@ -171,6 +182,29 @@ mod tests {
 
     fn default_params() -> LaunchParams {
         LaunchParams::new("127.0.0.1".into(), 9222, false, true, false)
+    }
+
+    #[test]
+    fn given_secondary_params_when_planning_then_mode_is_launch_new_with_ephemeral_port() {
+        let mut params = LaunchParams::new("127.0.0.1".into(), 9222, false, false, false);
+        params.secondary = true;
+        let plan = params.plan();
+        assert_eq!(plan.mode, LaunchMode::LaunchNew);
+        assert_eq!(params.resolve_port(), 0);
+        assert_eq!(
+            plan.profile,
+            ProfileMode::PersistentPerPort {
+                root: std::env::temp_dir(),
+                prefix: PROFILE_ROOT_PREFIX.to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn given_primary_params_on_local_host_when_planning_then_mode_is_auto() {
+        let params = LaunchParams::new("127.0.0.1".into(), 9222, false, false, false);
+        let plan = params.plan();
+        assert_eq!(plan.mode, LaunchMode::Auto);
     }
 
     #[test]

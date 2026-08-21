@@ -10,6 +10,8 @@ use rust_mcp_sdk::{
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct GetWebmcpInvocationTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Invocation identifier returned by webmcp_invoke_tool. Constraints: must match a known invocation from this Chrome session.
     #[serde(rename = "invocationId")]
     pub invocation_id: String,
@@ -25,7 +27,8 @@ impl GetWebmcpInvocationTool {
         ))
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
 
-        let st = handler.webmcp_state.lock().await;
+        let session = handler.session(tool.instance_id.clone()).await?;
+        let st = session.webmcp_state.lock().await;
         let invocation = st.invocations.get(&tool.invocation_id).ok_or_else(|| {
             CallToolError::from_message(format!(
                 "No WebMCP invocation found with id '{}'. The invocation may predate the current Chrome session, or the id is wrong. Use webmcp_list_invocations to see the known invocations.",
@@ -71,7 +74,7 @@ mod tests {
     ) -> ChromeMcpHandler {
         let handler = ChromeMcpHandler::new_test();
         {
-            let mut st = handler.webmcp_state.lock().await;
+            let mut st = handler.default_session.webmcp_state.lock().await;
             st.invocations.insert(
                 "inv-1".to_string(),
                 WebmcpInvocation {
@@ -98,7 +101,7 @@ mod tests {
         let handler = make_handler_with_invocation(None, None).await;
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "webmcp_get_invocation",
-            "arguments": { "invocationId": "inv-1" }
+            "arguments": { "instance_id": "default", "invocationId": "inv-1" }
         }))
         .unwrap();
 
@@ -117,7 +120,7 @@ mod tests {
             make_handler_with_invocation(Some("Completed"), Some(json!({"ok": true}))).await;
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "webmcp_get_invocation",
-            "arguments": { "invocationId": "inv-1" }
+            "arguments": { "instance_id": "default", "invocationId": "inv-1" }
         }))
         .unwrap();
 
@@ -134,7 +137,7 @@ mod tests {
         let handler = ChromeMcpHandler::new_test();
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "webmcp_get_invocation",
-            "arguments": { "invocationId": "nope" }
+            "arguments": { "instance_id": "default", "invocationId": "nope" }
         }))
         .unwrap();
 

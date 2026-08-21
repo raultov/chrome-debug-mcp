@@ -31,12 +31,25 @@ struct Args {
     /// Chrome remote debugging port
     #[arg(long, default_value_t = 9222)]
     port: u16,
+
+    /// Maximum number of concurrent Chrome instances (default: 8)
+    #[arg(long, default_value_t = 8)]
+    max_instances: usize,
 }
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {
     let args = Args::parse();
     eprintln!("[DEBUG] Starting with args: {:?}", args);
+
+    let instructions = concat!(
+        "Chrome Debug MCP Server Instructions:\n",
+        "- Chrome instances are launched lazily on the first tool call that requires connection.\n",
+        "- You can manage multiple isolated browser sessions using `open_instance` with unique `instance_id` values.\n",
+        "- WebMCP (interaction with page-provided tools) is an opt-in feature. To enable it on the default instance, call `restart_chrome` with `features: [\"WEB_MCP\"]` and reload the target page. For new instances, pass `features: [\"WEB_MCP\"]` to `open_instance`.\n",
+        "- When a page exposes WebMCP tools, use `webmcp_list_tools` and `webmcp_invoke_tool` to interact with them dynamically. This is faster and more reliable than raw DOM scraping.\n",
+        "- If `webmcp_list_tools` returns an empty array, check the warning text in the output content. The 'WEB_MCP' preset might be disabled on that instance, or the page hasn't finished loading."
+    );
 
     let server_info = InitializeResult {
         server_info: Implementation {
@@ -52,11 +65,13 @@ async fn main() -> SdkResult<()> {
             ..Default::default()
         },
         protocol_version: ProtocolVersion::V2025_11_25.into(),
-        instructions: None,
+        instructions: Some(instructions.to_string()),
         meta: None,
     };
 
     let transport = StdioTransport::new(TransportOptions::default())?;
+
+    // Create handler with max_instances support
     let handler = ChromeMcpHandler::new_with_params(
         args.host,
         args.port,
@@ -64,8 +79,12 @@ async fn main() -> SdkResult<()> {
         args.enable_automation,
         args.headless,
         args.user_profile,
-    )
-    .to_mcp_server_handler();
+    );
+    handler
+        .registry
+        .max_instances
+        .store(args.max_instances, std::sync::atomic::Ordering::SeqCst);
+    let handler = handler.to_mcp_server_handler();
     let server = server_runtime::create_server(rust_mcp_sdk::mcp_server::McpServerOptions {
         server_details: server_info,
         transport,
@@ -90,6 +109,7 @@ mod tests {
         let args = Args::parse_from(["chrome-debug-mcp"]);
         assert_eq!(args.port, 9222);
         assert_eq!(args.host, "127.0.0.1");
+        assert_eq!(args.max_instances, 8);
         assert!(!args.local);
         assert!(!args.enable_automation);
         assert!(!args.headless);
@@ -130,5 +150,11 @@ mod tests {
     fn test_args_parsing_custom_host() {
         let args = Args::parse_from(["chrome-debug-mcp", "--host", "host.docker.internal"]);
         assert_eq!(args.host, "host.docker.internal");
+    }
+
+    #[test]
+    fn test_args_parsing_max_instances() {
+        let args = Args::parse_from(["chrome-debug-mcp", "--max-instances", "16"]);
+        assert_eq!(args.max_instances, 16);
     }
 }

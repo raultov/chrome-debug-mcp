@@ -11,6 +11,8 @@ use serde_json::json;
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct NavigateTool {
+    /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
+    pub instance_id: Option<String>,
     /// Target URL to navigate to. Constraints: valid absolute URL (http/https/file). Interactions: navigation is blocked if MCP server started with 'local' flag and URL is not localhost/127.0.0.1/192.168.x.x/*.local. Defaults to: None (required).
     pub url: String,
 }
@@ -23,6 +25,7 @@ impl NavigateTool {
         let args_value = serde_json::Value::Object(params.arguments.unwrap_or_default());
         let args: NavigateTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
+        let session = handler.session(args.instance_id.clone()).await?;
 
         if handler.local_only && !is_local_address(&args.url) {
             return Err(CallToolError::from_message(format!(
@@ -31,7 +34,7 @@ impl NavigateTool {
             )));
         }
 
-        let mut client_lock = handler.get_or_connect().await?;
+        let mut client_lock = session.get_or_connect().await?;
         let cdp_client = client_lock.as_mut().unwrap();
 
         let result = cdp_client
@@ -87,7 +90,9 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "navigate",
@@ -141,9 +146,10 @@ mod tests {
         .unwrap();
 
         let port = spawn_mock_chrome_server().await;
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        let mut handler_local = ChromeMcpHandler::new_test_with_port(port);
+        handler_local.local_only = true;
 
-        let result_local = NavigateTool::handle(params_local, &handler).await;
+        let result_local = NavigateTool::handle(params_local, &handler_local).await;
         assert!(
             result_local.is_ok(),
             "Local navigation should succeed: {:?}",
@@ -156,7 +162,9 @@ mod tests {
         let mut handler = ChromeMcpHandler::new_test();
         handler.local_only = true;
         let port = spawn_mock_chrome_server().await;
-        handler.chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
 
         let local_urls = vec![
             "http://127.0.0.1:8080",
