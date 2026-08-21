@@ -47,6 +47,17 @@ on:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
+  # Run cargo tests before planning the release
+  test:
+    name: Run Cargo Tests
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run tests
+        run: cargo test
+
   # Validate Dockerfile before proceeding with the release
   validate-docker:
     name: Validate Dockerfile
@@ -58,7 +69,7 @@ jobs:
 
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
-    needs: [validate-docker]
+    needs: [validate-docker, test]
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
