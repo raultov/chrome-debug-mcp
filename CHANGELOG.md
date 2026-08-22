@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Chores
+- Upgrade `rust-mcp-sdk` from `0.8.3` to `1.0.1`.
+
 ## [1.3.0]
 ### Fixes
 - Documented the `WEB_MCP` and `WEBGL_SOFTWARE` capability presets and the previously undescribed boolean/array parameters (`headless`, `features`, `activate`, `clear`, `include_details`, `full_page`, `disable_cache`) directly in the tool-level `description` of `open_instance`, `restart_chrome`, `switch_tab`, `get_console_logs`, `get_network_logs`, `capture_screenshot`, and `profile_page_performance`. This is a workaround: the `JsonSchema` derive from `rust-mcp-macros` drops the `description` for `bool` and `Vec`/array fields, so those parameters were otherwise undiscoverable from the published schema.

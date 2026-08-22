@@ -24,7 +24,7 @@ async-trait = "0.1.92"
 cdp-browser-lite = { version = "0.3.4", features = ["test-support"] }
 chrono = "0.4.45"
 clap = { version = "4.6.6", features = ["derive"] }
-rust-mcp-sdk = "0.8.3"
+rust-mcp-sdk = "1.0.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tokio = { version = "1.53.1", features = ["full"] }

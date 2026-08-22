@@ -92,6 +92,7 @@ async fn main() -> SdkResult<()> {
         handler,
         task_store: None,
         client_task_store: None,
+        message_observer: None,
     });
 
     if let Err(e) = server.start().await {
