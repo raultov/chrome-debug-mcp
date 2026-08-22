@@ -1,4 +1,3 @@
-use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
 
 use crate::chrome_mcp_handler::chrome_instance::ChromeManager;
@@ -6,6 +5,20 @@ use crate::chrome_mcp_handler::chrome_instance::cdp_browser_manager::{
     CdpBrowserManager, RealLauncher,
 };
 use crate::chrome_mcp_handler::chrome_instance::launch::LaunchParams;
+use rust_mcp_sdk::schema::{CallToolResult, ContentBlock};
+
+trait ContentBlockExt {
+    fn as_text(&self) -> Option<&str>;
+}
+
+impl ContentBlockExt for ContentBlock {
+    fn as_text(&self) -> Option<&str> {
+        match self {
+            ContentBlock::TextContent(t) => Some(&t.text),
+            _ => None,
+        }
+    }
+}
 
 // These tests exercise the real Chrome lifecycle against an installed Chrome
 // binary (headless). They are `#[ignore]`d because they require a working
@@ -13,22 +26,18 @@ use crate::chrome_mcp_handler::chrome_instance::launch::LaunchParams;
 //
 //     cargo test -- --ignored
 //
-// Status (verified on Chrome 151, `cdp-browser-lite` 0.2.3):
+// Status (verified on Chrome 151, `cdp-browser-lite` 0.3.2):
 //
 // * B2 (attach to a user-started Chrome) PASSES — upstream 0.2.2 fixed
 //   `probe::is_chrome_cdp` to send the readiness probe over HTTP/1.1
 //   (Chrome >= 151 ignores HTTP/1.0 requests entirely).
 //
-// * B3 (a second managed instance launching on a different port/profile) PASSES
-//   — upstream 0.2.3 fixed `ProfileMode::managed_lock_exists` to detect the
-//   `SingletonLock` with `symlink_metadata` instead of `.exists()`. On
-//   Chrome >= 151 the `SingletonLock` is a dangling symlink (its target
-//   `<hostname>-<pid>` is never created; the real singleton is the socket under
-//   `/tmp/com.google.Chrome.*`), so `.exists()` returned false and the library
-//   fell through to `AttachAt`. With `symlink_metadata` the lock is detected and
-//   a second managed instance launches on a new port/profile.
-//
-// The helpers below use `symlink_metadata` (not `.exists()`) for the same reason.
+// * B3 (managed-instance handling under ephemeral profiles) PASSES — the
+//   default profile mode is now `Ephemeral`, so there is no stable
+//   per-port profile path: a second manager on an occupied port attaches to
+//   the existing CDP endpoint instead of launching a new instance. Attached
+//   instances are never killed by `stop_instance`, and the ephemeral profile
+//   directory is removed when a managed instance stops.
 
 const TEST_PORT_BASE: u16 = 19222;
 const TIMEOUT_30S: Duration = Duration::from_secs(30);
@@ -94,25 +103,6 @@ async fn wait_for_cdp_ready(host: &str, port: u16, timeout: Duration) -> bool {
             response.contains("Browser") || response.contains("WebKit-Version")
         };
         if probe.await {
-            return true;
-        }
-        tokio::time::sleep(POLL_INTERVAL).await;
-    }
-    false
-}
-
-fn singleton_lock_path(port: u16) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("chrome-mcp-profile-{port}"))
-}
-
-async fn wait_for_lock(port: u16, timeout: Duration) -> bool {
-    let lock = singleton_lock_path(port).join("SingletonLock");
-    let start = std::time::Instant::now();
-    while start.elapsed() < timeout {
-        // Chrome >= 151 leaves `SingletonLock` as a dangling symlink, so use
-        // symlink_metadata (which does not follow the target), matching the
-        // library's fixed `managed_lock_exists`.
-        if std::fs::symlink_metadata(&lock).is_ok() {
             return true;
         }
         tokio::time::sleep(POLL_INTERVAL).await;
@@ -251,7 +241,7 @@ fn spawn_user_chrome_on(port: u16) -> tokio::process::Child {
 
 #[tokio::test]
 #[ignore = "requires a real Chrome installation; covers B3"]
-async fn given_managed_instance_on_configured_port_when_second_manager_ensures_then_uses_different_port_and_profile()
+async fn given_managed_instance_on_configured_port_when_second_manager_ensures_then_attaches_to_existing_browser()
  {
     let port = TEST_PORT_BASE + 4;
     let mut first = CdpBrowserManager::new(
@@ -265,10 +255,6 @@ async fn given_managed_instance_on_configured_port_when_second_manager_ensures_t
         .await
         .expect("first ensure must succeed");
     let first_port = first.get_port();
-    assert!(
-        wait_for_lock(first_port, TIMEOUT_30S).await,
-        "managed instance must leave a SingletonLock in its profile"
-    );
 
     let mut second = CdpBrowserManager::new(
         local_params(port),
@@ -280,70 +266,248 @@ async fn given_managed_instance_on_configured_port_when_second_manager_ensures_t
         .ensure_instance()
         .await
         .expect("second ensure must succeed");
-    let second_port = second.get_port();
-    assert_ne!(
-        second_port, first_port,
-        "library must reassign to a different port (B3)"
+    assert_eq!(
+        second.get_port(),
+        first_port,
+        "with ephemeral profiles a second manager must attach to the existing CDP endpoint"
     );
+
+    // Attached instances are never killed: stopping the second manager must
+    // leave the first manager's browser alive.
+    second.stop_instance().await.unwrap();
     assert!(
-        wait_for_lock(second_port, TIMEOUT_30S).await,
-        "second managed instance must create its own profile SingletonLock"
-    );
-    assert!(
-        std::fs::symlink_metadata(singleton_lock_path(first_port).join("SingletonLock")).is_ok(),
-        "first managed instance's SingletonLock must remain untouched (B3)"
+        wait_for_cdp_ready("127.0.0.1", first_port, TIMEOUT_30S).await,
+        "first browser must survive the attached manager's stop"
     );
 
     let _ = first.stop_instance().await;
-    let _ = second.stop_instance().await;
 }
 
 #[tokio::test]
-#[ignore = "requires a real Chrome installation; covers B3 lock survival"]
-async fn given_managed_instance_on_configured_port_when_second_manager_ensures_then_existing_singleton_lock_survives()
- {
+#[ignore = "requires a real Chrome installation; covers ephemeral profile cleanup"]
+async fn given_managed_instance_when_stopped_then_ephemeral_profile_dir_is_removed() {
     let port = TEST_PORT_BASE + 5;
-    let mut first = CdpBrowserManager::new(
+    let mut mgr = CdpBrowserManager::new(
         local_params(port),
         Box::new(RealLauncher {
             pool: std::sync::Arc::new(cdp_browser_lite::BrowserPool::new()),
         }),
     );
-    first
-        .ensure_instance()
+    mgr.ensure_instance().await.expect("ensure must succeed");
+
+    let dir = mgr
+        .profile_dir()
         .await
-        .expect("first ensure must succeed");
-    let first_port = first.get_port();
+        .expect("managed instance must expose its ephemeral profile dir");
     assert!(
-        wait_for_lock(first_port, TIMEOUT_30S).await,
-        "managed instance must leave a SingletonLock in its profile"
-    );
-    let lock_before = singleton_lock_path(first_port).join("SingletonLock");
-    // Chrome >= 151 leaves SingletonLock as a dangling symlink, so use
-    // symlink_metadata (which does not follow the target) to read its own inode.
-    let inode_before = std::fs::symlink_metadata(&lock_before)
-        .expect("lock must be readable")
-        .ino();
-
-    let mut second = CdpBrowserManager::new(
-        local_params(port),
-        Box::new(RealLauncher {
-            pool: std::sync::Arc::new(cdp_browser_lite::BrowserPool::new()),
-        }),
-    );
-    let _ = second.ensure_instance().await;
-    assert!(
-        std::fs::symlink_metadata(&lock_before).is_ok(),
-        "pre-existing SingletonLock must survive the second manager's ensure"
-    );
-    let inode_after = std::fs::symlink_metadata(&lock_before)
-        .expect("lock must still be readable")
-        .ino();
-    assert_eq!(
-        inode_before, inode_after,
-        "lock inode must be unchanged — the second manager must not delete the first instance's lock"
+        dir.exists(),
+        "ephemeral profile dir must exist while the browser is alive: {dir:?}"
     );
 
-    let _ = first.stop_instance().await;
-    let _ = second.stop_instance().await;
+    mgr.stop_instance().await.unwrap();
+
+    assert!(
+        !dir.exists(),
+        "ephemeral profile dir must be removed on stop: {dir:?}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires a real Chrome installation"]
+async fn given_real_chrome_when_multiple_tabs_opened_then_console_logs_are_isolated() {
+    let port = TEST_PORT_BASE + 6;
+    let handler = crate::chrome_mcp_handler::ChromeMcpHandler::new_with_params(
+        "127.0.0.1".into(),
+        port,
+        false,
+        false,
+        true, // headless
+        false,
+    );
+
+    // Aseguramos que se conecte
+    let session = handler.session(None).await.expect("default session");
+    let _ = session.get_or_connect().await.expect("connect");
+
+    // 1. Abrimos la Tab A
+    let params_a: rust_mcp_sdk::schema::CallToolRequestParams =
+        serde_json::from_value(serde_json::json!({
+            "name": "open_tab",
+            "arguments": {
+                "url": "about:blank",
+                "label": "tab-a"
+            }
+        }))
+        .unwrap();
+
+    let open_a_res = crate::chrome_mcp_handler::chrome_instance::open_tab::OpenTabTool::handle(
+        params_a, &handler,
+    )
+    .await
+    .expect("open tab A");
+
+    // The TabRegistry assigns opaque IDs; the initial tab may be discovered
+    // asynchronously and consume an ID between two opens, so we capture the
+    // actual IDs instead of assuming 'tab-1'/'tab-2'.
+    let tab_id_a = extract_tab_id(&open_a_res);
+
+    // 2. Abrimos la Tab B
+    let params_b: rust_mcp_sdk::schema::CallToolRequestParams =
+        serde_json::from_value(serde_json::json!({
+            "name": "open_tab",
+            "arguments": {
+                "url": "about:blank",
+                "label": "tab-b"
+            }
+        }))
+        .unwrap();
+
+    let open_b_res = crate::chrome_mcp_handler::chrome_instance::open_tab::OpenTabTool::handle(
+        params_b, &handler,
+    )
+    .await
+    .expect("open tab B");
+
+    let tab_id_b = extract_tab_id(&open_b_res);
+    assert_ne!(
+        tab_id_a, tab_id_b,
+        "tab A and tab B must be registered under distinct IDs"
+    );
+
+    // 3. Emitimos un log de consola en la Tab A
+    let params_eval: rust_mcp_sdk::schema::CallToolRequestParams =
+        serde_json::from_value(serde_json::json!({
+            "name": "evaluate_js",
+            "arguments": {
+                "tab_id": tab_id_a,
+                "expression": "console.error('hello from tab A')"
+            }
+        }))
+        .unwrap();
+
+    let _ = crate::chrome_mcp_handler::cdp_domains::runtime::evaluate_js::EvaluateJsTool::handle(
+        params_eval,
+        &handler,
+    )
+    .await
+    .expect("evaluate JS tab A");
+
+    // Damos un breve instante para que los hilos asíncronos del listener de eventos procesen el log
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // 4. Verificamos que el log sólo aparece en la Tab A y no en la Tab B
+    let params_logs_a: rust_mcp_sdk::schema::CallToolRequestParams =
+        serde_json::from_value(serde_json::json!({
+            "name": "get_console_logs",
+            "arguments": {
+                "tab_id": tab_id_a
+            }
+        }))
+        .unwrap();
+
+    let logs_a_res =
+        crate::chrome_mcp_handler::cdp_domains::log::get_console_logs::GetConsoleLogsTool::handle(
+            params_logs_a,
+            &handler,
+        )
+        .await
+        .expect("get logs A");
+
+    let logs_a = format!("{:?}", logs_a_res.content);
+    assert!(
+        logs_a.contains("hello from tab A"),
+        "Tab A must contain its own log"
+    );
+
+    let params_logs_b: rust_mcp_sdk::schema::CallToolRequestParams =
+        serde_json::from_value(serde_json::json!({
+            "name": "get_console_logs",
+            "arguments": {
+                "tab_id": tab_id_b
+            }
+        }))
+        .unwrap();
+
+    let logs_b_res =
+        crate::chrome_mcp_handler::cdp_domains::log::get_console_logs::GetConsoleLogsTool::handle(
+            params_logs_b,
+            &handler,
+        )
+        .await
+        .expect("get logs B");
+
+    let logs_b = format!("{:?}", logs_b_res.content);
+    assert!(
+        !logs_b.contains("hello from tab A"),
+        "Tab B must not contain tab A's log"
+    );
+
+    // 5. Cerramos la Tab A y comprobamos que se elimina
+    let params_close: rust_mcp_sdk::schema::CallToolRequestParams =
+        serde_json::from_value(serde_json::json!({
+            "name": "close_tab",
+            "arguments": {
+                "tab_id": tab_id_a
+            }
+        }))
+        .unwrap();
+
+    let _ = crate::chrome_mcp_handler::chrome_instance::close_tab::CloseTabTool::handle(
+        params_close,
+        &handler,
+    )
+    .await
+    .expect("close tab A");
+
+    let params_list: rust_mcp_sdk::schema::CallToolRequestParams =
+        serde_json::from_value(serde_json::json!({
+            "name": "list_tabs"
+        }))
+        .unwrap();
+
+    let list_res = crate::chrome_mcp_handler::chrome_instance::list_tabs::ListTabsTool::handle(
+        params_list,
+        &handler,
+    )
+    .await
+    .expect("list tabs");
+
+    let list_text = list_res.content[0]
+        .as_text()
+        .expect("list_tabs returns text");
+    let list_json: serde_json::Value =
+        serde_json::from_str(list_text).expect("list_tabs returns JSON");
+    let tab_ids: Vec<String> = list_json["tabs"]
+        .as_array()
+        .expect("tabs must be an array")
+        .iter()
+        .map(|t| {
+            t["tab_id"]
+                .as_str()
+                .expect("tab_id must be a string")
+                .to_string()
+        })
+        .collect();
+    assert!(
+        !tab_ids.contains(&tab_id_a),
+        "tab A must be removed from the list"
+    );
+    assert!(tab_ids.contains(&tab_id_b), "tab B must remain in the list");
+
+    // Cleanup Chrome
+    let _ = session.chrome_manager.lock().await.stop_instance().await;
+}
+
+/// Extracts the tab_id from an open_tab response body, e.g.
+/// `{"tab_id": "tab-2", ...}` → `tab-2`.
+fn extract_tab_id(result: &CallToolResult) -> String {
+    let text = result.content[0]
+        .as_text()
+        .expect("open_tab response must be text");
+    let json: serde_json::Value =
+        serde_json::from_str(text).expect("open_tab response must be JSON");
+    json["tab_id"]
+        .as_str()
+        .expect("open_tab response must contain a tab_id")
+        .to_string()
 }
