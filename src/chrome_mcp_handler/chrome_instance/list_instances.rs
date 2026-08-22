@@ -6,7 +6,7 @@ use rust_mcp_sdk::{
 
 #[macros::mcp_tool(
     name = "list_instances",
-    description = "Lists all running or registered Chrome instances."
+    description = "Lists all running or registered Chrome instances. Side effects: none (read-only registry snapshot). Returns: JSON array of instance descriptors with id, label, host, port, profile_dir, features and is_default. Use this to discover instance_ids before passing 'instance_id' to other tools. Alternatives: 'list_tabs' to enumerate tabs within an instance."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct ListInstancesTool {}

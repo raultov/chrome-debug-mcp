@@ -1,12 +1,18 @@
 pub mod cdp_browser_manager;
+pub mod close_tab;
 #[cfg(test)]
 pub mod integration_tests;
 pub mod launch;
+pub mod list_tabs;
+pub mod open_tab;
 pub mod restart_chrome;
 pub mod stop_chrome;
+pub mod switch_tab;
+pub(crate) mod tab_lifecycle;
+pub(crate) mod tab_registry;
 
 use async_trait::async_trait;
-use cdp_browser_lite::CdpClient;
+use cdp_browser_lite::{BrowserClient, CdpClient};
 
 use crate::chrome_mcp_handler::chrome_instance::launch::ChromeFeature;
 
@@ -15,6 +21,17 @@ pub trait ChromeManager: Send + Sync {
     async fn ensure_instance(&mut self) -> anyhow::Result<()>;
     async fn stop_instance(&mut self) -> anyhow::Result<()>;
     async fn client(&self) -> anyhow::Result<CdpClient>;
+    /// Retrieves a browser-level CDP client for tab management
+    /// (open_tab, close_tab, attach_tab). Errors when the underlying
+    /// manager does not support it (e.g. test mocks).
+    async fn browser_client(&self) -> anyhow::Result<BrowserClient>;
+    /// Returns the on-disk profile directory of the managed browser, if any.
+    /// Defaults to `None` for managers that do not expose profile paths
+    /// (e.g. test mocks). For ephemeral profiles the directory only exists
+    /// while the browser is alive.
+    async fn profile_dir(&self) -> Option<std::path::PathBuf> {
+        None
+    }
     fn get_port(&self) -> u16;
     fn set_proxy(&mut self, proxy: Option<String>);
     /// Replaces the capability presets applied on the next launch. Like
@@ -63,6 +80,12 @@ impl ChromeManager for MockChromeManager {
         CdpClient::new(&addr, std::time::Duration::from_secs(10))
             .await
             .map_err(Into::into)
+    }
+
+    async fn browser_client(&self) -> anyhow::Result<BrowserClient> {
+        Err(anyhow::anyhow!(
+            "MockChromeManager does not support browser_client; tab management requires a real Chrome instance"
+        ))
     }
 
     fn get_port(&self) -> u16 {

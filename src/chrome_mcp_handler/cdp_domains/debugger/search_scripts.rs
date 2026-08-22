@@ -13,6 +13,8 @@ use serde_json::json;
 pub struct SearchScriptsTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Text pattern or special command to search for. Constraints: non-empty string (empty string returns cached script count). Interactions: '@source' returns first 1000 chars of each script; 'debug' returns script lengths and errors. Defaults to: None (required).
     pub query: String,
 }
@@ -38,8 +40,7 @@ impl SearchScriptsTool {
             ]));
         }
 
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
+        let target = session.target(args.tab_id.clone()).await?;
 
         let scripts = {
             let state = session.debugger_state.lock().await;
@@ -49,7 +50,7 @@ impl SearchScriptsTool {
         let mut results = vec![];
         let mut errors = vec![];
         for (script_id, script_hash) in scripts {
-            match cdp_client
+            match target
                 .send_raw_command("Debugger.getScriptSource", json!({"scriptId": script_id}))
                 .await
             {

@@ -8,7 +8,7 @@ pub use invoke_tool::InvokeWebmcpToolTool;
 pub use list_invocations::ListWebmcpInvocationsTool;
 pub use list_tools::ListWebmcpToolsTool;
 
-use cdp_browser_lite::{CdpClient, WsResponse};
+use cdp_browser_lite::WsResponse;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -135,13 +135,23 @@ pub(crate) async fn process_webmcp_event(event: &WsResponse, state: &Arc<Mutex<W
     }
 }
 
-pub(crate) fn start_webmcp_listener(client: &mut CdpClient, state_clone: Arc<Mutex<WebmcpState>>) {
-    let mut webmcp_events = client.on_domain("WebMCP");
+pub(crate) fn start_webmcp_listener(
+    target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
+    state_clone: Arc<Mutex<WebmcpState>>,
+) {
+    let webmcp_events = target.on_domain("WebMCP");
     tokio::spawn(async move {
-        use tokio_stream::StreamExt;
-        while let Some(Ok(event)) = webmcp_events.next().await {
-            process_webmcp_event(&event, &state_clone).await;
-        }
+        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
+            webmcp_events,
+            "WebMCP",
+            move |event| {
+                let state = state_clone.clone();
+                async move {
+                    process_webmcp_event(&event, &state).await;
+                }
+            },
+        )
+        .await;
     });
 }
 
@@ -152,11 +162,9 @@ mod tests {
 
     fn make_event(method: &str, params: serde_json::Value) -> WsResponse {
         WsResponse {
-            id: None,
-            result: None,
-            error: None,
             method: Some(method.to_string()),
             params: Some(params),
+            ..Default::default()
         }
     }
 

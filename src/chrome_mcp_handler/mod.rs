@@ -25,10 +25,14 @@ use cdp_domains::runtime::evaluate_js::EvaluateJsTool;
 use cdp_domains::runtime::inspect_dom::InspectDomTool;
 use cdp_domains::tracing::profile_page_performance::ProfilePagePerformanceTool;
 use chrome_instance::close_instance::CloseInstanceTool;
+use chrome_instance::close_tab::CloseTabTool;
 use chrome_instance::list_instances::ListInstancesTool;
+use chrome_instance::list_tabs::ListTabsTool;
 use chrome_instance::open_instance::OpenInstanceTool;
+use chrome_instance::open_tab::OpenTabTool;
 use chrome_instance::restart_chrome::RestartChromeTool;
 use chrome_instance::stop_chrome::StopChromeTool;
+use chrome_instance::switch_tab::SwitchTabTool;
 
 use async_trait::async_trait;
 use cdp_browser_lite::CdpClient;
@@ -98,6 +102,7 @@ pub(crate) struct BrowserSession {
     pub(crate) custom_state: Arc<Mutex<CustomState>>,
     pub(crate) webmcp_state: Arc<Mutex<cdp_domains::webmcp::WebmcpState>>,
     pub(crate) chrome_manager: Arc<Mutex<dyn chrome_instance::ChromeManager>>,
+    pub(crate) tabs: Arc<std::sync::RwLock<chrome_instance::tab_registry::TabRegistry>>,
 }
 
 impl BrowserSession {
@@ -119,7 +124,7 @@ impl BrowserSession {
                 manager.client().await
             };
             match client_res {
-                Ok(mut client) => {
+                Ok(client) => {
                     let _ = client
                         .send_raw_command("Runtime.enable", cdp_browser_lite::NoParams)
                         .await;
@@ -160,24 +165,26 @@ impl BrowserSession {
                             cdp_domains::webmcp::WebmcpAvailability::NotRequested;
                     }
 
+                    let target = cdp_domains::cdp_target::CdpTarget::Client(client.clone());
+
                     cdp_domains::debugger::start_debugger_listener(
-                        &mut client,
+                        &target,
                         self.debugger_state.clone(),
                     );
 
                     cdp_domains::network::start_network_listener(
-                        &mut client,
+                        &target,
                         self.network_state.clone(),
                     );
 
-                    cdp_domains::log::start_log_listener(&mut client, self.log_state.clone());
+                    cdp_domains::log::start_log_listener(&target, self.log_state.clone());
                     cdp_domains::tracing::start_tracing_listener(
-                        &mut client,
+                        &target,
                         self.tracing_state.clone(),
                     );
                     if has_webmcp {
                         cdp_domains::webmcp::start_webmcp_listener(
-                            &mut client,
+                            &target,
                             self.webmcp_state.clone(),
                         );
                     }
@@ -185,6 +192,17 @@ impl BrowserSession {
                     let _ = client
                         .send_raw_command("Debugger.enable", cdp_browser_lite::NoParams)
                         .await;
+
+                    // Iniciar el listener de ciclo de vida de pestañas (Target.*)
+                    if let Ok(browser_client) = {
+                        let manager = self.chrome_manager.lock().await;
+                        manager.browser_client().await
+                    } {
+                        chrome_instance::tab_lifecycle::start_tab_lifecycle_listener(
+                            browser_client,
+                            self.tabs.clone(),
+                        );
+                    }
 
                     *client_lock = Some(client);
                 }
@@ -197,6 +215,201 @@ impl BrowserSession {
             }
         }
         Ok(client_lock)
+    }
+
+    pub(crate) async fn target(
+        &self,
+        tab_id: Option<String>,
+    ) -> std::result::Result<cdp_domains::cdp_target::CdpTarget, CallToolError> {
+        enum Lookup {
+            Found(cdp_domains::cdp_target::CdpTarget),
+            NotFound(String),
+            FallbackToDefault,
+        }
+
+        let lookup = {
+            let registry = self.tabs.read().unwrap();
+            if let Some(id) = tab_id {
+                if let Some(entry) = registry.tabs.get(&id) {
+                    Lookup::Found(cdp_domains::cdp_target::CdpTarget::Tab(entry.tab.clone()))
+                } else {
+                    Lookup::NotFound(id)
+                }
+            } else if let Some(ref active_id) = registry.active_tab_id
+                && let Some(entry) = registry.tabs.get(active_id)
+            {
+                Lookup::Found(cdp_domains::cdp_target::CdpTarget::Tab(entry.tab.clone()))
+            } else {
+                Lookup::FallbackToDefault
+            }
+        };
+
+        match lookup {
+            Lookup::Found(target) => return Ok(target),
+            Lookup::NotFound(id) => {
+                return Err(CallToolError::from_message(format!(
+                    "Tab with ID '{}' not found in this session",
+                    id
+                )));
+            }
+            Lookup::FallbackToDefault => {}
+        }
+
+        let client_guard = self.get_or_connect().await?;
+        if let Some(ref client) = *client_guard {
+            Ok(cdp_domains::cdp_target::CdpTarget::Client(client.clone()))
+        } else {
+            Err(CallToolError::from_message(
+                "Failed to retrieve target: no active tabs or default connection available"
+                    .to_string(),
+            ))
+        }
+    }
+
+    #[expect(
+        dead_code,
+        reason = "Debugger state retrieval wired to tools starting in Phase 5 E2E"
+    )]
+    pub(crate) fn debugger_state(
+        &self,
+        tab_id: Option<String>,
+    ) -> std::result::Result<Arc<Mutex<DebuggerState>>, CallToolError> {
+        let registry = self.tabs.read().unwrap();
+        if let Some(id) = tab_id {
+            if let Some(entry) = registry.tabs.get(&id) {
+                return Ok(entry.debugger_state.clone());
+            } else {
+                return Err(CallToolError::from_message(format!(
+                    "Tab '{}' not found",
+                    id
+                )));
+            }
+        }
+        if let Some(ref active_id) = registry.active_tab_id
+            && let Some(entry) = registry.tabs.get(active_id)
+        {
+            return Ok(entry.debugger_state.clone());
+        }
+        Ok(self.debugger_state.clone())
+    }
+
+    pub(crate) fn network_state(
+        &self,
+        tab_id: Option<String>,
+    ) -> std::result::Result<Arc<Mutex<NetworkState>>, CallToolError> {
+        let registry = self.tabs.read().unwrap();
+        if let Some(id) = tab_id {
+            if let Some(entry) = registry.tabs.get(&id) {
+                return Ok(entry.network_state.clone());
+            } else {
+                return Err(CallToolError::from_message(format!(
+                    "Tab '{}' not found",
+                    id
+                )));
+            }
+        }
+        if let Some(ref active_id) = registry.active_tab_id
+            && let Some(entry) = registry.tabs.get(active_id)
+        {
+            return Ok(entry.network_state.clone());
+        }
+        Ok(self.network_state.clone())
+    }
+
+    pub(crate) fn log_state(
+        &self,
+        tab_id: Option<String>,
+    ) -> std::result::Result<Arc<Mutex<cdp_domains::log::LogState>>, CallToolError> {
+        let registry = self.tabs.read().unwrap();
+        if let Some(id) = tab_id {
+            if let Some(entry) = registry.tabs.get(&id) {
+                return Ok(entry.log_state.clone());
+            } else {
+                return Err(CallToolError::from_message(format!(
+                    "Tab '{}' not found",
+                    id
+                )));
+            }
+        }
+        if let Some(ref active_id) = registry.active_tab_id
+            && let Some(entry) = registry.tabs.get(active_id)
+        {
+            return Ok(entry.log_state.clone());
+        }
+        Ok(self.log_state.clone())
+    }
+
+    #[expect(
+        dead_code,
+        reason = "Tracing state retrieval wired to tools starting in Phase 5 E2E"
+    )]
+    pub(crate) fn tracing_state(
+        &self,
+        tab_id: Option<String>,
+    ) -> std::result::Result<Arc<Mutex<cdp_domains::tracing::TracingState>>, CallToolError> {
+        let registry = self.tabs.read().unwrap();
+        if let Some(id) = tab_id {
+            if let Some(entry) = registry.tabs.get(&id) {
+                return Ok(entry.tracing_state.clone());
+            } else {
+                return Err(CallToolError::from_message(format!(
+                    "Tab '{}' not found",
+                    id
+                )));
+            }
+        }
+        if let Some(ref active_id) = registry.active_tab_id
+            && let Some(entry) = registry.tabs.get(active_id)
+        {
+            return Ok(entry.tracing_state.clone());
+        }
+        Ok(self.tracing_state.clone())
+    }
+
+    pub(crate) fn custom_state(
+        &self,
+        tab_id: Option<String>,
+    ) -> std::result::Result<Arc<Mutex<CustomState>>, CallToolError> {
+        let registry = self.tabs.read().unwrap();
+        if let Some(id) = tab_id {
+            if let Some(entry) = registry.tabs.get(&id) {
+                return Ok(entry.custom_state.clone());
+            } else {
+                return Err(CallToolError::from_message(format!(
+                    "Tab '{}' not found",
+                    id
+                )));
+            }
+        }
+        if let Some(ref active_id) = registry.active_tab_id
+            && let Some(entry) = registry.tabs.get(active_id)
+        {
+            return Ok(entry.custom_state.clone());
+        }
+        Ok(self.custom_state.clone())
+    }
+
+    pub(crate) fn webmcp_state(
+        &self,
+        tab_id: Option<String>,
+    ) -> std::result::Result<Arc<Mutex<cdp_domains::webmcp::WebmcpState>>, CallToolError> {
+        let registry = self.tabs.read().unwrap();
+        if let Some(id) = tab_id {
+            if let Some(entry) = registry.tabs.get(&id) {
+                return Ok(entry.webmcp_state.clone());
+            } else {
+                return Err(CallToolError::from_message(format!(
+                    "Tab '{}' not found",
+                    id
+                )));
+            }
+        }
+        if let Some(ref active_id) = registry.active_tab_id
+            && let Some(entry) = registry.tabs.get(active_id)
+        {
+            return Ok(entry.webmcp_state.clone());
+        }
+        Ok(self.webmcp_state.clone())
     }
 }
 
@@ -289,6 +502,9 @@ impl ChromeMcpHandler {
                 cdp_domains::webmcp::WebmcpState::default(),
             )),
             chrome_manager: Arc::new(tokio::sync::Mutex::new(manager)),
+            tabs: Arc::new(std::sync::RwLock::new(
+                chrome_instance::tab_registry::TabRegistry::new(16),
+            )),
         });
 
         let default_features = {
@@ -354,6 +570,9 @@ impl ChromeMcpHandler {
             )),
             chrome_manager: Arc::new(tokio::sync::Mutex::new(
                 chrome_instance::MockChromeManager::new(port),
+            )),
+            tabs: Arc::new(std::sync::RwLock::new(
+                chrome_instance::tab_registry::TabRegistry::new(16),
             )),
         });
 
@@ -458,6 +677,10 @@ impl ServerHandler for ChromeMcpHandler {
                 OpenInstanceTool::tool(),
                 ListInstancesTool::tool(),
                 CloseInstanceTool::tool(),
+                OpenTabTool::tool(),
+                ListTabsTool::tool(),
+                CloseTabTool::tool(),
+                SwitchTabTool::tool(),
                 GetNetworkLogsTool::tool(),
                 GetConsoleLogsTool::tool(),
                 GetPerformanceMetricsTool::tool(),
@@ -520,6 +743,14 @@ impl ServerHandler for ChromeMcpHandler {
             ListInstancesTool::handle(params, self).await
         } else if params.name == "close_instance" {
             CloseInstanceTool::handle(params, self).await
+        } else if params.name == "open_tab" {
+            OpenTabTool::handle(params, self).await
+        } else if params.name == "list_tabs" {
+            ListTabsTool::handle(params, self).await
+        } else if params.name == "close_tab" {
+            CloseTabTool::handle(params, self).await
+        } else if params.name == "switch_tab" {
+            SwitchTabTool::handle(params, self).await
         } else if params.name == "get_network_logs" {
             GetNetworkLogsTool::handle(params, self).await
         } else if params.name == "get_console_logs" {
@@ -698,7 +929,7 @@ mod tests {
         let tools = result.unwrap().tools;
 
         // Ensure all registered tools are present
-        assert_eq!(tools.len(), 31);
+        assert_eq!(tools.len(), 35);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"scroll".to_string()));
         assert!(tool_names.contains(&"capture_screenshot".to_string()));

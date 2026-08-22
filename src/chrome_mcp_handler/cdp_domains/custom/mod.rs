@@ -2,7 +2,6 @@ pub mod get_custom_events;
 pub mod send_cdp_command;
 
 use crate::chrome_mcp_handler::{CustomEvent, CustomState};
-use cdp_browser_lite::CdpClient;
 use cdp_browser_lite::WsResponse;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -27,7 +26,7 @@ pub(crate) async fn process_custom_event(event: &WsResponse, state: &Arc<Mutex<C
 }
 
 pub(crate) async fn ensure_domain_listener(
-    client: &mut CdpClient,
+    target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state: &Arc<Mutex<CustomState>>,
     domain: &str,
 ) {
@@ -36,13 +35,20 @@ pub(crate) async fn ensure_domain_listener(
         // Since we spawn a task that needs 'static, we leak the domain name string.
         // This is safe because there's a finite number of CDP domains.
         let domain_static: &'static str = Box::leak(domain.to_string().into_boxed_str());
-        let mut events = client.on_domain(domain_static);
+        let events = target.on_domain(domain_static);
         let state_clone = state.clone();
         tokio::spawn(async move {
-            use tokio_stream::StreamExt;
-            while let Some(Ok(event)) = events.next().await {
-                process_custom_event(&event, &state_clone).await;
-            }
+            crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
+                events,
+                domain_static,
+                move |event| {
+                    let state = state_clone.clone();
+                    async move {
+                        process_custom_event(&event, &state).await;
+                    }
+                },
+            )
+            .await;
         });
         st.active_domains.insert(domain.to_string());
     }

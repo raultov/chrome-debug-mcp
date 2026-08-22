@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use cdp_browser_lite::{BrowserConfig, BrowserError, CdpClient};
+use cdp_browser_lite::{BrowserClient, BrowserConfig, BrowserError, CdpClient};
 
 use crate::chrome_mcp_handler::chrome_instance::launch::{LaunchParams, LaunchPlan};
 
@@ -55,6 +55,19 @@ impl crate::chrome_mcp_handler::chrome_instance::ChromeManager for CdpBrowserMan
         browser.client().await
     }
 
+    async fn browser_client(&self) -> anyhow::Result<BrowserClient> {
+        let browser = self
+            .browser
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Chrome instance has not been ensured yet"))?;
+        browser.browser_client().await
+    }
+
+    async fn profile_dir(&self) -> Option<std::path::PathBuf> {
+        let browser = self.browser.as_ref()?;
+        browser.profile_dir().await
+    }
+
     fn get_port(&self) -> u16 {
         self.resolved_port
     }
@@ -84,6 +97,13 @@ pub(crate) trait ManagedBrowser: Send + Sync {
     async fn resolved_port(&self) -> u16;
     async fn is_alive(&self) -> bool;
     async fn client(&self) -> anyhow::Result<CdpClient>;
+    /// Retrieves a browser-level CDP client for tab management.
+    /// Default implementation rejects when the backend cannot provide one.
+    async fn browser_client(&self) -> anyhow::Result<BrowserClient>;
+    /// On-disk profile directory, if the backend exposes one.
+    async fn profile_dir(&self) -> Option<std::path::PathBuf> {
+        None
+    }
     async fn stop(&self) -> anyhow::Result<()>;
 }
 
@@ -115,6 +135,17 @@ impl ManagedBrowser for RealBrowser {
             .client()
             .await
             .map_err(|e: BrowserError| anyhow::anyhow!(e.to_string()))
+    }
+
+    async fn browser_client(&self) -> anyhow::Result<BrowserClient> {
+        self.browser
+            .browser_client()
+            .await
+            .map_err(|e: BrowserError| anyhow::anyhow!(e.to_string()))
+    }
+
+    async fn profile_dir(&self) -> Option<std::path::PathBuf> {
+        self.browser.profile_dir().await
     }
 
     async fn stop(&self) -> anyhow::Result<()> {
@@ -192,6 +223,12 @@ impl ManagedBrowser for FakeBrowser {
     async fn client(&self) -> anyhow::Result<CdpClient> {
         Err(anyhow::anyhow!(
             "FakeBrowser::client is not implemented; tests should not reach this path"
+        ))
+    }
+
+    async fn browser_client(&self) -> anyhow::Result<BrowserClient> {
+        Err(anyhow::anyhow!(
+            "FakeBrowser::browser_client is not implemented; tests should not reach this path"
         ))
     }
 
@@ -274,6 +311,10 @@ impl ManagedBrowser for FakeBrowserHandle {
         Err(anyhow::anyhow!(
             "FakeBrowserHandle::client is not implemented; tests should not reach this path"
         ))
+    }
+
+    async fn browser_client(&self) -> anyhow::Result<BrowserClient> {
+        self.0.browser_client().await
     }
 
     async fn stop(&self) -> anyhow::Result<()> {

@@ -13,6 +13,8 @@ use serde_json::json;
 pub struct EvaluateOnCallFrameTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// JavaScript expression to evaluate in call frame scope. Constraints: valid JavaScript accessing local/closure variables. Interactions: requires active paused debugger session; has access to function parameters and local variables. Defaults to: None (required).
     pub expression: String,
 }
@@ -37,8 +39,7 @@ impl EvaluateOnCallFrameTool {
             }
         }
 
-        let mut chrome_handler_lock = session.get_or_connect().await?;
-        let cdp_client = chrome_handler_lock.as_mut().unwrap();
+        let target = session.target(args.tab_id.clone()).await?;
 
         let call_frame_id = {
             let state = session.debugger_state.lock().await;
@@ -51,7 +52,7 @@ impl EvaluateOnCallFrameTool {
             )
         })?;
 
-        let expression_result = cdp_client
+        let expression_result = target
             .send_raw_command(
                 "Debugger.evaluateOnCallFrame",
                 json!({

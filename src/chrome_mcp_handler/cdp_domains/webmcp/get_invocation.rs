@@ -12,6 +12,8 @@ use rust_mcp_sdk::{
 pub struct GetWebmcpInvocationTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Invocation identifier returned by webmcp_invoke_tool. Constraints: must match a known invocation from this Chrome session.
     #[serde(rename = "invocationId")]
     pub invocation_id: String,
@@ -28,7 +30,8 @@ impl GetWebmcpInvocationTool {
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
 
         let session = handler.session(tool.instance_id.clone()).await?;
-        let st = session.webmcp_state.lock().await;
+        let webmcp_state = session.webmcp_state(tool.tab_id.clone())?;
+        let st = webmcp_state.lock().await;
         let invocation = st.invocations.get(&tool.invocation_id).ok_or_else(|| {
             CallToolError::from_message(format!(
                 "No WebMCP invocation found with id '{}'. The invocation may predate the current Chrome session, or the id is wrong. Use webmcp_list_invocations to see the known invocations.",

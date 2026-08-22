@@ -13,6 +13,8 @@ use serde_json::json;
 pub struct RemoveBreakpointTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Unique identifier of the breakpoint (returned from set_breakpoint). Constraints: non-empty string matching format from set_breakpoint response. Interactions: must correspond to an active breakpoint or operation will fail.
     pub breakpoint_id: String,
 }
@@ -26,11 +28,9 @@ impl RemoveBreakpointTool {
         let args: RemoveBreakpointTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
+        let target = session.target(args.tab_id.clone()).await?;
 
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
-
-        let response = cdp_client
+        let response = target
             .send_raw_command(
                 "Debugger.removeBreakpoint",
                 json!({ "breakpointId": args.breakpoint_id }),

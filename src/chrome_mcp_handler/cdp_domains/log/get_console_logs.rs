@@ -6,12 +6,14 @@ use rust_mcp_sdk::{
 
 #[macros::mcp_tool(
     name = "get_console_logs",
-    description = "Retrieves cached console messages including log, warning, error, info levels and uncaught exceptions. Side effects: optionally clears cache when 'clear' is true. Prerequisites: requires an active Chrome tab. Returns: JSON array of console messages with timestamp, level, and text. Use this to debug script errors, monitor page health, inspect exception traces. Alternatives: browser DevTools Console, error logging services."
+    description = "Retrieves cached console messages including log, warning, error, info levels and uncaught exceptions. Side effects: when 'clear' is true the cached console messages are emptied after being returned. Prerequisites: requires an active Chrome tab. Returns: JSON array of console messages with timestamp, level, and text. Use this to debug script errors, monitor page health, inspect exception traces. Alternatives: browser DevTools Console, error logging services."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct GetConsoleLogsTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Clear console cache after returning logs. Constraints: boolean. Interactions: when true, subsequent calls only return new messages. Defaults to: false.
     #[serde(default)]
     pub clear: Option<bool>,
@@ -32,7 +34,8 @@ impl GetConsoleLogsTool {
         let session = handler.session(args.instance_id.clone()).await?;
 
         let mut logs = {
-            let mut st = session.log_state.lock().await;
+            let log_state = session.log_state(args.tab_id.clone())?;
+            let mut st = log_state.lock().await;
             let current_logs = st.messages.clone();
             if args.clear.unwrap_or(false) {
                 st.messages.clear();

@@ -13,6 +13,8 @@ use serde_json::json;
 pub struct ReloadTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
 }
 
 impl ReloadTool {
@@ -24,11 +26,9 @@ impl ReloadTool {
         let args: ReloadTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
+        let target = session.target(args.tab_id.clone()).await?;
 
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
-
-        let response = cdp_client.send_raw_command("Page.reload", json!({})).await;
+        let response = target.send_raw_command("Page.reload", json!({})).await;
 
         match response {
             Ok(resp) => Ok(CallToolResult::text_content(vec![

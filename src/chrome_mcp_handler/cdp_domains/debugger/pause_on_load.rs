@@ -16,6 +16,8 @@ use serde_json::json;
 pub struct PauseOnLoadTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
 }
 
 impl PauseOnLoadTool {
@@ -27,18 +29,16 @@ impl PauseOnLoadTool {
         let args: PauseOnLoadTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
+        let target = session.target(args.tab_id.clone()).await?;
 
-        let mut client_lock = session.get_or_connect().await?;
-        let client = client_lock.as_mut().unwrap();
-
-        client
+        target
             .send_raw_command("Debugger.enable", cdp_browser_lite::NoParams)
             .await
             .map_err(|e| {
                 CallToolError::from_message(format!("CDP Debugger.enable error: {:?}", e))
             })?;
 
-        client
+        target
             .send_raw_command(
                 "Page.addScriptToEvaluateOnNewDocument",
                 json!({ "source": "debugger;" }),
@@ -48,7 +48,7 @@ impl PauseOnLoadTool {
                 CallToolError::from_message(format!("CDP Page.addScript... error: {:?}", e))
             })?;
 
-        client
+        target
             .send_raw_command("Page.reload", cdp_browser_lite::NoParams)
             .await
             .map_err(|e| CallToolError::from_message(format!("CDP Page.reload error: {:?}", e)))?;

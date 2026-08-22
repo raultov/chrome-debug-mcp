@@ -13,6 +13,8 @@ use serde_json::json;
 pub struct InspectDomTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Text pattern to search for in the DOM (case-sensitive). Constraints: any string. Interactions: when provided, returns context snippet instead of full HTML. Defaults to: None (returns full HTML if omitted).
     pub query: Option<String>,
     /// Characters to include before the match. Constraints: non-negative integer. Interactions: only applies if 'query' provided. Defaults to: 200.
@@ -30,11 +32,9 @@ impl InspectDomTool {
         let args: InspectDomTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
+        let target = session.target(args.tab_id.clone()).await?;
 
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
-
-        let result = cdp_client
+        let result = target
             .send_raw_command(
                 "Runtime.evaluate",
                 json!({

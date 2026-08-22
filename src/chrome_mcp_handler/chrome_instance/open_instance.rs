@@ -18,11 +18,11 @@ use tokio::sync::Mutex;
 
 #[macros::mcp_tool(
     name = "open_instance",
-    description = "Opens a new independent Chrome instance. Returns its instance_id, host, port, and profile directory."
+    description = "Opens a new independent Chrome instance. Side effects: launches a separate Chrome process with its own profile directory and remote-debugging port. Prerequisites: rejected when the server runs in --user-profile mode (Chrome's singleton profile lock). Returns: structured JSON with 'instance_id' (pass it as the 'instance_id' argument of other tools), 'host', 'port' and 'profile_dir'. Use this to isolate browsing sessions, cookies, proxies or WebMCP contexts from one another. Alternatives: 'open_tab' for additional tabs within an existing instance. Parameters: 'features' accepts a closed set - 'WEB_MCP' (enables the experimental WebMCP surface for sites that expose tools to the browser) or 'WEBGL_SOFTWARE' (forces SwiftShader software WebGL for GPU-less environments); 'headless' defaults to false (prefer false so the user can see the browser)."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct OpenInstanceTool {
-    /// Optional label to identify the instance. If omitted, a dynamic label is generated.
+    /// Optional label to identify the instance. The label becomes the instance_id returned by this tool and accepted by the 'instance_id' argument of other tools. If omitted, a dynamic label is generated.
     pub label: Option<String>,
     /// Optional headless mode. Encouraged to be set to false so that the user can see what happens with the browser. Defaults to false.
     pub headless: Option<bool>,
@@ -102,6 +102,9 @@ impl OpenInstanceTool {
             custom_state: Arc::new(Mutex::new(CustomState::default())),
             webmcp_state: Arc::new(Mutex::new(cdp_domains::webmcp::WebmcpState::default())),
             chrome_manager,
+            tabs: Arc::new(std::sync::RwLock::new(
+                crate::chrome_mcp_handler::chrome_instance::tab_registry::TabRegistry::new(16),
+            )),
         });
 
         // Trigger ensure_instance to resolve the port
@@ -117,9 +120,13 @@ impl OpenInstanceTool {
             mgr.get_port()
         };
 
-        // Resolve profile directory path
-        let plan = child_params.plan();
-        let profile_dir = plan.profile.dir_for_port(resolved_port);
+        // Resolve the real profile directory from the live browser: with
+        // ephemeral profiles the path is randomly generated at launch time and
+        // cannot be derived from the port.
+        let profile_dir = {
+            let mgr = session.chrome_manager.lock().await;
+            mgr.profile_dir().await
+        };
 
         let desc = InstanceDescriptor {
             id: instance_id.clone(),
@@ -141,10 +148,13 @@ impl OpenInstanceTool {
             .map_err(CallToolError::from_message)?;
 
         Ok(CallToolResult::text_content(vec![
-            format!(
-                "Opened Chrome instance '{}' on port {}. Profile directory: {:?}",
-                desc.id, desc.port, desc.profile_dir
-            )
+            serde_json::json!({
+                "instance_id": desc.id,
+                "host": desc.host,
+                "port": desc.port,
+                "profile_dir": desc.profile_dir,
+            })
+            .to_string()
             .into(),
         ]))
     }

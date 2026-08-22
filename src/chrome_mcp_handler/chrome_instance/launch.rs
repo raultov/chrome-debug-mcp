@@ -1,8 +1,6 @@
 use cdp_browser_lite::{BrowserConfig, LaunchMode, ProfileMode};
 use rust_mcp_sdk::macros;
 
-const PROFILE_ROOT_PREFIX: &str = "chrome-mcp-profile-";
-
 /// Curated Chrome capability presets an MCP client may request when restarting
 /// the browser.
 ///
@@ -120,10 +118,11 @@ impl LaunchParams {
         let profile = if self.user_profile {
             ProfileMode::UserDefault
         } else {
-            ProfileMode::PersistentPerPort {
-                root: std::env::temp_dir(),
-                prefix: PROFILE_ROOT_PREFIX.to_string(),
-            }
+            // Fresh profile per launch: no cookies, storage, or session state
+            // bleed between MCP sessions, and no crash-restore bubble from a
+            // previously unclean shutdown. The directory is removed when the
+            // browser stops (or swept by cdp-browser-lite after an abrupt kill).
+            ProfileMode::Ephemeral
         };
 
         let _port = if self.secondary { 0 } else { self.port };
@@ -191,13 +190,7 @@ mod tests {
         let plan = params.plan();
         assert_eq!(plan.mode, LaunchMode::LaunchNew);
         assert_eq!(params.resolve_port(), 0);
-        assert_eq!(
-            plan.profile,
-            ProfileMode::PersistentPerPort {
-                root: std::env::temp_dir(),
-                prefix: PROFILE_ROOT_PREFIX.to_string()
-            }
-        );
+        assert_eq!(plan.profile, ProfileMode::Ephemeral);
     }
 
     #[test]
@@ -243,27 +236,10 @@ mod tests {
     }
 
     #[test]
-    fn given_managed_profile_when_planning_then_profile_is_persistent_per_port() {
+    fn given_managed_profile_when_planning_then_profile_is_ephemeral() {
         let params = default_params();
         let plan = params.plan();
-        assert_eq!(
-            plan.profile,
-            ProfileMode::PersistentPerPort {
-                root: std::env::temp_dir(),
-                prefix: PROFILE_ROOT_PREFIX.to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn given_persistent_per_port_plan_when_resolving_dir_then_matches_configured_prefix() {
-        let params = LaunchParams::new("127.0.0.1".into(), 12345, false, false, false);
-        let plan = params.plan();
-        let dir = plan.profile.dir_for_port(params.configured_port()).unwrap();
-        assert_eq!(
-            dir,
-            std::env::temp_dir().join(format!("{PROFILE_ROOT_PREFIX}{}", params.configured_port()))
-        );
+        assert_eq!(plan.profile, ProfileMode::Ephemeral);
     }
 
     #[test]

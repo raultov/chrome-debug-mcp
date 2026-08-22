@@ -3,7 +3,6 @@ pub mod get_network_logs;
 use crate::chrome_mcp_handler::NetworkRequest;
 use crate::chrome_mcp_handler::NetworkState;
 use crate::chrome_mcp_handler::WebSocketFrame;
-use cdp_browser_lite::CdpClient;
 use cdp_browser_lite::WsResponse;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -149,15 +148,22 @@ pub(crate) async fn process_network_event(event: &WsResponse, state: &Arc<Mutex<
 }
 
 pub(crate) fn start_network_listener(
-    client: &mut CdpClient,
+    target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<NetworkState>>,
 ) {
-    let mut network_events = client.on_domain("Network");
+    let network_events = target.on_domain("Network");
     tokio::spawn(async move {
-        use tokio_stream::StreamExt;
-        while let Some(Ok(event)) = network_events.next().await {
-            process_network_event(&event, &state_clone).await;
-        }
+        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
+            network_events,
+            "Network",
+            move |event| {
+                let state = state_clone.clone();
+                async move {
+                    process_network_event(&event, &state).await;
+                }
+            },
+        )
+        .await;
     });
 }
 
@@ -168,11 +174,9 @@ mod tests {
 
     fn make_event(method: &str, params: serde_json::Value) -> WsResponse {
         WsResponse {
-            id: None,
-            result: None,
-            error: None,
             method: Some(method.to_string()),
             params: Some(params),
+            ..Default::default()
         }
     }
 

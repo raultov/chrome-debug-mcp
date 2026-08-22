@@ -7,7 +7,7 @@ use rust_mcp_sdk::{
 
 #[macros::mcp_tool(
     name = "restart_chrome",
-    description = "Stops and restarts the managed Chrome instance with remote debugging enabled, optionally configuring proxy and opt-in capability presets. Side effects: destructive - terminates running Chrome process and all open tabs; closes debugging connection. Prerequisites: requires CHROME_PATH environment variable or chrome in PATH. Returns: restart success confirmation listing the presets applied. Use this to reset browser state, apply proxy settings, enable experimental browser capabilities, recover from crashes. Alternatives: 'reload' to refresh page without restart, 'navigate' to load new content."
+    description = "Stops and restarts the Chrome instance selected by 'instance_id' (the default instance when omitted) with remote debugging enabled, optionally configuring proxy and opt-in capability presets. Side effects: destructive - terminates that instance's Chrome process and all its open tabs; closes its debugging connection; other instances keep running. Prerequisites: requires CHROME_PATH environment variable or chrome in PATH. Returns: restart success confirmation listing the presets applied. Use this to reset browser state, apply proxy settings, enable experimental browser capabilities, recover from crashes. Alternatives: 'reload' to refresh page without restart, 'navigate' to load new content. Parameters: 'features' accepts a closed set - 'WEB_MCP' (enables the experimental WebMCP surface for sites that expose tools to the browser) or 'WEBGL_SOFTWARE' (forces SwiftShader software WebGL for GPU-less environments); arbitrary Chrome flags are not accepted."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct RestartChromeTool {
@@ -97,6 +97,7 @@ mod tests {
     use super::*;
     use crate::chrome_mcp_handler::chrome_instance::ChromeManager;
     use crate::chrome_mcp_handler::chrome_instance::MockChromeManager;
+    use crate::chrome_mcp_handler::chrome_instance::open_instance::OpenInstanceTool;
     use rust_mcp_sdk::schema::CallToolRequestParams;
     use serde_json::json;
     use std::sync::Arc;
@@ -261,6 +262,39 @@ mod tests {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Every preset a client may pass in `features`.
+    ///
+    /// The explicit length makes adding a `ChromeFeature` variant a compile
+    /// error here, so a new preset cannot slip past the coverage test below.
+    const ALL_FEATURE_PRESETS: [ChromeFeature; 2] =
+        [ChromeFeature::WebMcp, ChromeFeature::WebglSoftware];
+
+    #[test]
+    fn given_every_feature_preset_when_building_tool_descriptions_then_literal_is_documented() {
+        let open_instance_description = OpenInstanceTool::tool()
+            .description
+            .expect("open_instance must publish a tool description");
+        let restart_chrome_description = RestartChromeTool::tool()
+            .description
+            .expect("restart_chrome must publish a tool description");
+
+        for feature in ALL_FEATURE_PRESETS {
+            // Matched exhaustively on purpose: a new variant fails to compile
+            // until it is also listed in ALL_FEATURE_PRESETS.
+            let literal = match feature {
+                ChromeFeature::WebMcp | ChromeFeature::WebglSoftware => feature.as_name(),
+            };
+            assert!(
+                open_instance_description.contains(literal),
+                "open_instance description must name the '{literal}' preset; got: {open_instance_description}"
+            );
+            assert!(
+                restart_chrome_description.contains(literal),
+                "restart_chrome description must name the '{literal}' preset; got: {restart_chrome_description}"
+            );
         }
     }
 

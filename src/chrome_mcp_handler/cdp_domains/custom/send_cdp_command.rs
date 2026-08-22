@@ -12,6 +12,8 @@ use rust_mcp_sdk::{
 pub struct SendCdpCommandTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// CDP protocol method name (e.g., 'DOM.getDocument', 'Runtime.evaluate'). Constraints: valid CDP domain.method format. Interactions: method must be recognized by Chrome protocol version.
     pub method: String,
     /// JSON-formatted parameters for the CDP command. Constraints: valid JSON object string. Interactions: Page.navigate URLs subject to local-only restrictions; empty string or '{}' for no parameters. Defaults to: None.
@@ -48,29 +50,26 @@ impl SendCdpCommandTool {
             )));
         }
 
-        let mut client_lock = session.get_or_connect().await?;
-        if let Some(client) = client_lock.as_mut() {
-            // Extract domain from method (e.g., "DOM" from "DOM.getDocument")
-            if let Some(domain) = tool.method.split('.').next() {
-                super::ensure_domain_listener(client, &session.custom_state, domain).await;
-            }
+        let target = session.target(tool.tab_id.clone()).await?;
 
-            let response = client.send_raw_command(&tool.method, parsed_params).await;
-            match response {
-                Ok(res) => Ok(CallToolResult::text_content(vec![
-                    format!(
-                        "Command '{}' executed successfully. Result: {:?}",
-                        tool.method, res
-                    )
-                    .into(),
-                ])),
-                Err(e) => Err(CallToolError::from_message(format!(
-                    "Failed to execute CDP command '{}': {}",
-                    tool.method, e
-                ))),
-            }
-        } else {
-            Err(CallToolError::from_message("Not connected to Chrome"))
+        // Extract domain from method (e.g., "DOM" from "DOM.getDocument")
+        if let Some(domain) = tool.method.split('.').next() {
+            super::ensure_domain_listener(&target, &session.custom_state, domain).await;
+        }
+
+        let response = target.send_raw_command(&tool.method, parsed_params).await;
+        match response {
+            Ok(res) => Ok(CallToolResult::text_content(vec![
+                format!(
+                    "Command '{}' executed successfully. Result: {:?}",
+                    tool.method, res
+                )
+                .into(),
+            ])),
+            Err(e) => Err(CallToolError::from_message(format!(
+                "Failed to execute CDP command '{}': {}",
+                tool.method, e
+            ))),
         }
     }
 }

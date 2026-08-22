@@ -7,12 +7,14 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "capture_screenshot",
-    description = "Captures a visual representation of the current page viewport or entire page as a base64 encoded image. Side effects: none (read-only). Prerequisites: requires an active Chrome tab. Returns: base64 encoded image in specified format. Use this to visually verify UI state, layout, or rendering. Alternatives: 'inspect_dom' for raw HTML structure, 'get_performance_metrics' for rendering metrics."
+    description = "Captures a visual representation of the current page viewport or entire page as a base64 encoded image ('full_page' defaults to false, capturing only the visible viewport; set true to capture the entire page). Side effects: none (read-only). Prerequisites: requires an active Chrome tab. Returns: base64 encoded image in specified format. Use this to visually verify UI state, layout, or rendering. Alternatives: 'inspect_dom' for raw HTML structure, 'get_performance_metrics' for rendering metrics."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct CaptureScreenshotTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Output image format. Constraints: must be 'png', 'jpeg', or 'webp'. Interactions: 'quality' applies only to 'jpeg' and 'webp' formats. Defaults to: "png".
     pub format: Option<String>,
     /// Compression quality (0-100, higher=better quality). Constraints: integer between 0 and 100. Interactions: only applies when 'format' is 'jpeg' or 'webp'; ignored for 'png'. Defaults to: 100.
@@ -30,9 +32,7 @@ impl CaptureScreenshotTool {
         let args: CaptureScreenshotTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
-
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
+        let target = session.target(args.tab_id.clone()).await?;
 
         let format = args.format.unwrap_or_else(|| "png".to_string());
 
@@ -50,7 +50,7 @@ impl CaptureScreenshotTool {
 
         if args.full_page.unwrap_or(false) {
             // 1. Get the metrics of the page
-            let metrics_res = cdp_client
+            let metrics_res = target
                 .send_raw_command("Page.getLayoutMetrics", json!({}))
                 .await
                 .map_err(|e| {
@@ -85,7 +85,7 @@ impl CaptureScreenshotTool {
             }
         }
 
-        let result = cdp_client
+        let result = target
             .send_raw_command("Page.captureScreenshot", command_params)
             .await;
 

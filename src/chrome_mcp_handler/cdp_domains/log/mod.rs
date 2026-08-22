@@ -1,6 +1,5 @@
 pub mod get_console_logs;
 
-use cdp_browser_lite::CdpClient;
 use cdp_browser_lite::WsResponse;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -151,22 +150,39 @@ pub(crate) async fn process_log_event(event: &WsResponse, state: &Arc<Mutex<LogS
     }
 }
 
-pub(crate) fn start_log_listener(client: &mut CdpClient, state_clone: Arc<Mutex<LogState>>) {
-    let mut log_events = client.on_domain("Log");
+pub(crate) fn start_log_listener(
+    target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
+    state_clone: Arc<Mutex<LogState>>,
+) {
+    let log_events = target.on_domain("Log");
     let state_clone_log = state_clone.clone();
     tokio::spawn(async move {
-        use tokio_stream::StreamExt;
-        while let Some(Ok(event)) = log_events.next().await {
-            process_log_event(&event, &state_clone_log).await;
-        }
+        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
+            log_events,
+            "Log",
+            move |event| {
+                let state = state_clone_log.clone();
+                async move {
+                    process_log_event(&event, &state).await;
+                }
+            },
+        )
+        .await;
     });
 
-    let mut runtime_events = client.on_domain("Runtime");
+    let runtime_events = target.on_domain("Runtime");
     let state_clone_runtime = state_clone.clone();
     tokio::spawn(async move {
-        use tokio_stream::StreamExt;
-        while let Some(Ok(event)) = runtime_events.next().await {
-            process_log_event(&event, &state_clone_runtime).await;
-        }
+        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
+            runtime_events,
+            "Runtime",
+            move |event| {
+                let state = state_clone_runtime.clone();
+                async move {
+                    process_log_event(&event, &state).await;
+                }
+            },
+        )
+        .await;
     });
 }

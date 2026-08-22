@@ -13,6 +13,8 @@ use serde_json::json;
 pub struct SetBreakpointTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Script hash to identify the target script. Constraints: one of 'script_hash', 'script_id', or 'url' must be provided. Defaults to: None.
     pub script_hash: Option<String>,
     /// Script ID (from Debugger.scriptParsed event). Constraints: one of 'script_hash', 'script_id', or 'url' must be provided. Interactions: mutually exclusive with 'script_hash' and 'url' (first match wins). Defaults to: None.
@@ -41,8 +43,7 @@ impl SetBreakpointTool {
             ));
         }
 
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
+        let target = session.target(args.tab_id.clone()).await?;
 
         let response = if let Some(script_id) = args.script_id {
             let mut location = json!({
@@ -55,7 +56,7 @@ impl SetBreakpointTool {
                     .unwrap()
                     .insert("columnNumber".to_string(), json!(col));
             }
-            cdp_client
+            target
                 .send_raw_command("Debugger.setBreakpoint", json!({ "location": location }))
                 .await
         } else if let Some(url) = args.url {
@@ -69,7 +70,7 @@ impl SetBreakpointTool {
                     .unwrap()
                     .insert("columnNumber".to_string(), json!(col));
             }
-            cdp_client
+            target
                 .send_raw_command("Debugger.setBreakpointByUrl", params)
                 .await
         } else if let Some(script_hash) = args.script_hash {
@@ -83,7 +84,7 @@ impl SetBreakpointTool {
                     .unwrap()
                     .insert("columnNumber".to_string(), json!(col));
             }
-            cdp_client
+            target
                 .send_raw_command("Debugger.setBreakpointByUrl", params)
                 .await
         } else {

@@ -13,6 +13,8 @@ use serde_json::json;
 pub struct ClickElementTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// CSS selector identifying the target element. Constraints: valid CSS selector string matching a single DOM element. Interactions: must resolve to exactly one visible element or operation fails. Defaults to: None (required).
     pub selector: String,
 }
@@ -26,9 +28,7 @@ impl ClickElementTool {
         let args: ClickElementTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
-
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
+        let target = session.target(args.tab_id.clone()).await?;
 
         // Escaping double quotes in the selector just in case
         let safe_selector = args.selector.replace("\"", "\\\"");
@@ -46,7 +46,7 @@ impl ClickElementTool {
             safe_selector
         );
 
-        let eval_result = cdp_client
+        let eval_result = target
             .send_raw_command(
                 "Runtime.evaluate",
                 json!({
@@ -84,7 +84,7 @@ impl ClickElementTool {
                         value.get("y").and_then(|v| v.as_f64()),
                     ) {
                         // Dispatch mousePressed
-                        let _ = cdp_client
+                        let _ = target
                             .send_raw_command(
                                 "Input.dispatchMouseEvent",
                                 json!({
@@ -101,7 +101,7 @@ impl ClickElementTool {
                             })?;
 
                         // Dispatch mouseReleased
-                        let _ = cdp_client
+                        let _ = target
                             .send_raw_command(
                                 "Input.dispatchMouseEvent",
                                 json!({

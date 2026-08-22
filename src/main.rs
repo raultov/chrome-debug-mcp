@@ -45,7 +45,8 @@ async fn main() -> SdkResult<()> {
     let instructions = concat!(
         "Chrome Debug MCP Server Instructions:\n",
         "- Chrome instances are launched lazily on the first tool call that requires connection.\n",
-        "- You can manage multiple isolated browser sessions using `open_instance` with unique `instance_id` values.\n",
+        "- Instances: a 'default' instance always exists. To run additional isolated browser sessions, call `open_instance` with a unique 'label'; that label becomes the returned instance_id. Pass the instance_id as the 'instance_id' argument of any tool to address that instance (omit it for the default). Use `list_instances` to enumerate them and `close_instance` to stop one.\n",
+        "- Tabs: within an instance, create extra tabs with `open_tab` and enumerate them with `list_tabs`. Every tool accepts a 'tab_id' argument; omit it to target the active tab, and use `switch_tab` to change which tab is active. Per-tab state (console logs, breakpoints, network traffic) is isolated between tabs.\n",
         "- WebMCP (interaction with page-provided tools) is an opt-in feature. To enable it on the default instance, call `restart_chrome` with `features: [\"WEB_MCP\"]` and reload the target page. For new instances, pass `features: [\"WEB_MCP\"]` to `open_instance`.\n",
         "- When a page exposes WebMCP tools, use `webmcp_list_tools` and `webmcp_invoke_tool` to interact with them dynamically. This is faster and more reliable than raw DOM scraping.\n",
         "- If `webmcp_list_tools` returns an empty array, check the warning text in the output content. The 'WEB_MCP' preset might be disabled on that instance, or the page hasn't finished loading."

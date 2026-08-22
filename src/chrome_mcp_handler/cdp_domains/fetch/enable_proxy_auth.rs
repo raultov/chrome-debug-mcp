@@ -16,6 +16,8 @@ use tokio_stream::StreamExt;
 pub struct EnableProxyAuthTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Proxy authentication username. Constraints: non-empty string. Interactions: paired with 'password'; sent to proxy server on auth challenge.
     pub username: String,
     /// Proxy authentication password. Constraints: non-empty string. Interactions: paired with 'username'; sent to proxy server on auth challenge.
@@ -38,14 +40,14 @@ impl EnableProxyAuthTool {
         ))
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
         let session = handler.session(tool.instance_id.clone()).await?;
+        let target = session.target(tool.tab_id.clone()).await?;
 
         let prewarm_url = tool
             .prewarm_url
             .clone()
             .unwrap_or_else(|| "http://api.ipify.org?format=json".to_string());
 
-        let mut client_lock = session.get_or_connect().await?;
-        if let Some(client) = client_lock.as_mut() {
+        {
             let resource_type = tool
                 .resource_type
                 .clone()
@@ -60,16 +62,16 @@ impl EnableProxyAuthTool {
                 ],
                 "handleAuthRequests": true
             });
-            client
+            target
                 .send_raw_command("Fetch.enable", fetch_params)
                 .await
                 .map_err(|e| {
                     CallToolError::from_message(format!("Failed to enable Fetch domain: {}", e))
                 })?;
 
-            let mut fetch_events = client.on_domain("Fetch");
-            let cdp_client_clone = client.clone();
-            let cdp_client_nav = client.clone();
+            let mut fetch_events = target.on_domain("Fetch");
+            let target_clone = target.clone();
+            let target_nav = target.clone();
             let username = tool.username.clone();
             let password = tool.password.clone();
 
@@ -90,7 +92,7 @@ impl EnableProxyAuthTool {
 
                                 if let Some(req_id) = request_id {
                                     let params = json!({"requestId": req_id});
-                                    let _ = cdp_client_clone
+                                    let _ = target_clone
                                         .send_raw_command("Fetch.continueRequest", params)
                                         .await;
                                 }
@@ -112,7 +114,7 @@ impl EnableProxyAuthTool {
                                             "password": password
                                         }
                                     });
-                                    if let Err(e) = cdp_client_clone
+                                    if let Err(e) = target_clone
                                         .send_raw_command("Fetch.continueWithAuth", params)
                                         .await
                                     {
@@ -135,7 +137,7 @@ impl EnableProxyAuthTool {
                             eprintln!(
                                 "Proxy auth handler timed out after 30s of inactivity. Disabling Fetch domain."
                             );
-                            let _ = cdp_client_clone
+                            let _ = target_clone
                                 .send_raw_command("Fetch.disable", NoParams)
                                 .await;
                             break;
@@ -149,9 +151,7 @@ impl EnableProxyAuthTool {
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 eprintln!("Navigating to pre-warm URL: {}", prewarm_url);
                 let params = json!({"url": prewarm_url});
-                let _ = cdp_client_nav
-                    .send_raw_command("Page.navigate", params)
-                    .await;
+                let _ = target_nav.send_raw_command("Page.navigate", params).await;
             });
         }
 

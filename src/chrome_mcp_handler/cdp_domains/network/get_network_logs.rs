@@ -7,12 +7,14 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "get_network_logs",
-    description = "Retrieves intercepted HTTP/REST requests and WebSocket frames from network activity cache with filtering. Side effects: optionally clears cached logs when 'clear' is true. Prerequisites: requires active Chrome tab with network monitoring enabled. Returns: JSON array of requests/WebSocket frames with optional full details. Rate limits: none. Use this to audit API calls, debug network issues, inspect WebSocket traffic. Alternatives: browser DevTools Network tab, HAR file export."
+    description = "Retrieves intercepted HTTP/REST requests and WebSocket frames from network activity cache with filtering. Side effects: when 'clear' is true the cached requests and WebSocket frames are emptied after being returned. Prerequisites: requires active Chrome tab with network monitoring enabled. Returns: JSON array of requests/WebSocket frames with optional full details ('include_details' defaults to true; set false for summary only). Rate limits: none. Use this to audit API calls, debug network issues, inspect WebSocket traffic. Alternatives: browser DevTools Network tab, HAR file export."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct GetNetworkLogsTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Clear network cache after returning logs. Constraints: boolean. Interactions: when true, subsequent calls return only new traffic. Defaults to: false.
     #[serde(default)]
     pub clear: Option<bool>,
@@ -63,9 +65,8 @@ impl GetNetworkLogsTool {
         let include_details = args.include_details.unwrap_or(true);
 
         let (mut requests, mut ws_frames) = {
-            let session = handler.session(None).await.unwrap();
-            let _ = &session;
-            let mut st = handler.default_session.network_state.lock().await;
+            let network_state = session.network_state(args.tab_id.clone())?;
+            let mut st = network_state.lock().await;
             let reqs = st.requests.clone();
             let ws = st.ws_frames.clone();
             if args.clear.unwrap_or(false) {
@@ -86,14 +87,12 @@ impl GetNetworkLogsTool {
             });
 
             if include_details {
-                let client_lock_opt = session.get_or_connect().await.ok();
-                if let Some(mut client_lock) = client_lock_opt
-                    && let Some(client) = client_lock.as_mut()
-                {
+                let target_opt = session.target(args.tab_id.clone()).await.ok();
+                if let Some(target) = target_opt {
                     for (req_id, req) in requests.iter_mut() {
                         if req.response_status.is_some()
                             && req.response_body.is_none()
-                            && let Ok(body_resp) = client
+                            && let Ok(body_resp) = target
                                 .send_raw_command(
                                     "Network.getResponseBody",
                                     json!({"requestId": req_id}),

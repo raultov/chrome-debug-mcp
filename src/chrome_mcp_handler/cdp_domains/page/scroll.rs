@@ -13,6 +13,8 @@ use serde_json::json;
 pub struct ScrollTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Horizontal scroll distance in pixels. Constraints: integer (positive=right, negative=left). Interactions: ignored if 'selector' is provided; combined with 'y' for diagonal scrolling. Defaults to: 0 (no horizontal scroll).
     pub x: Option<i32>,
     /// Vertical scroll distance in pixels. Constraints: integer (positive=down, negative=up). Interactions: ignored if 'selector' or 'pages' is provided; overridden by 'pages'. Defaults to: 0 (no vertical scroll).
@@ -32,9 +34,7 @@ impl ScrollTool {
         let args: ScrollTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
-
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
+        let target = session.target(args.tab_id.clone()).await?;
 
         let expression = if let Some(ref selector) = args.selector {
             let safe_selector = selector.replace("\"", "\\\"");
@@ -63,7 +63,7 @@ impl ScrollTool {
             )
         };
 
-        let result = cdp_client
+        let result = target
             .send_raw_command(
                 "Runtime.evaluate",
                 json!({

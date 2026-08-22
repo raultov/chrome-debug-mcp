@@ -13,6 +13,8 @@ use serde_json::json;
 pub struct NavigateTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Target URL to navigate to. Constraints: valid absolute URL (http/https/file). Interactions: navigation is blocked if MCP server started with 'local' flag and URL is not localhost/127.0.0.1/192.168.x.x/*.local. Defaults to: None (required).
     pub url: String,
 }
@@ -34,10 +36,9 @@ impl NavigateTool {
             )));
         }
 
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
+        let target = session.target(args.tab_id.clone()).await?;
 
-        let result = cdp_client
+        let result = target
             .send_raw_command(
                 "Page.navigate",
                 json!({

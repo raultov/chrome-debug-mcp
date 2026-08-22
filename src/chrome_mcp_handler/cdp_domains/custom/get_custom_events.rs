@@ -12,6 +12,8 @@ use rust_mcp_sdk::{
 pub struct GetCustomEventsTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Filter events by CDP method name (case-sensitive). Constraints: string matching format 'Domain.eventName'. Interactions: when omitted, returns all events. Defaults to: None (no filtering).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter_method: Option<String>,
@@ -35,7 +37,8 @@ impl GetCustomEventsTool {
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
 
         let session = handler.session(tool.instance_id.clone()).await?;
-        let st = session.custom_state.lock().await;
+        let custom_state = session.custom_state(tool.tab_id.clone())?;
+        let st = custom_state.lock().await;
         let filtered_events: Vec<_> = st
             .events
             .iter()

@@ -12,6 +12,8 @@ use rust_mcp_sdk::{
 pub struct ResumeTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
 }
 
 impl ResumeTool {
@@ -23,11 +25,9 @@ impl ResumeTool {
         let args: ResumeTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
+        let target = session.target(args.tab_id.clone()).await?;
 
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
-
-        let _ = cdp_client
+        let _ = target
             .send_raw_command("Debugger.resume", cdp_browser_lite::NoParams)
             .await
             .map_err(|e| {

@@ -1,6 +1,5 @@
 pub mod profile_page_performance;
 
-use cdp_browser_lite::CdpClient;
 use cdp_browser_lite::WsResponse;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -28,14 +27,21 @@ pub(crate) async fn process_tracing_event(event: &WsResponse, state: &Arc<Mutex<
 }
 
 pub(crate) fn start_tracing_listener(
-    client: &mut CdpClient,
+    target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<TracingState>>,
 ) {
-    let mut tracing_events = client.on_domain("Tracing");
+    let tracing_events = target.on_domain("Tracing");
     tokio::spawn(async move {
-        use tokio_stream::StreamExt;
-        while let Some(Ok(event)) = tracing_events.next().await {
-            process_tracing_event(&event, &state_clone).await;
-        }
+        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
+            tracing_events,
+            "Tracing",
+            move |event| {
+                let state = state_clone.clone();
+                async move {
+                    process_tracing_event(&event, &state).await;
+                }
+            },
+        )
+        .await;
     });
 }

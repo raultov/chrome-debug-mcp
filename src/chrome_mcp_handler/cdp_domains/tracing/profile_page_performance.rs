@@ -9,12 +9,14 @@ use tokio::sync::mpsc;
 
 #[macros::mcp_tool(
     name = "profile_page_performance",
-    description = "Records a performance trace of page execution, calculating Core Web Vitals (FCP, LCP, DCL, Load) and identifying Long Tasks (>50ms blocking). Side effects: may temporarily disable cache; impacts page memory/CPU. Prerequisites: requires an active Chrome tab; trace recording uses background bandwidth. Returns: JSON with vitals, blocking time, and top 5 long tasks. Use this to optimize performance, identify bottlenecks, measure cold starts. Alternatives: browser DevTools Performance tab, real user monitoring (RUM)."
+    description = "Records a performance trace of page execution, calculating Core Web Vitals (FCP, LCP, DCL, Load) and identifying Long Tasks (>50ms blocking). Side effects: may temporarily disable cache ('disable_cache' defaults to false); impacts page memory/CPU. Prerequisites: requires an active Chrome tab; trace recording uses background bandwidth. Returns: JSON with vitals, blocking time, and top 5 long tasks. Use this to optimize performance, identify bottlenecks, measure cold starts. Alternatives: browser DevTools Performance tab, real user monitoring (RUM)."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct ProfilePagePerformanceTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Recording duration in milliseconds. Constraints: integer between 500 and 15000. Interactions: longer duration captures more data; use 3000-5000 for typical pages. Defaults to: 3000.
     #[serde(default)]
     pub duration_ms: Option<u64>,
@@ -56,19 +58,15 @@ impl ProfilePagePerformanceTool {
         let args: ProfilePagePerformanceTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
+        let target = session.target(args.tab_id.clone()).await?;
 
         let duration = args.duration_ms.unwrap_or(3000).clamp(500, 15000);
         let action = args.action.unwrap_or_else(|| "none".to_string());
         let disable_cache = args.disable_cache.unwrap_or(false);
 
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().ok_or_else(|| {
-            CallToolError::from_message("Chrome connection is not established".to_string())
-        })?;
-
         // 1. Setup cache
         if disable_cache {
-            let _ = cdp_client
+            let _ = target
                 .send_raw_command("Network.setCacheDisabled", json!({ "cacheDisabled": true }))
                 .await;
         }
@@ -81,7 +79,7 @@ impl ProfilePagePerformanceTool {
         }
 
         // 3. Start tracing
-        let start_res = cdp_client
+        let start_res = target
             .send_raw_command(
                 "Tracing.start",
                 json!({
@@ -100,7 +98,7 @@ impl ProfilePagePerformanceTool {
 
         // 4. Perform action
         if action == "reload" {
-            let _ = cdp_client
+            let _ = target
                 .send_raw_command("Page.reload", json!({ "ignoreCache": disable_cache }))
                 .await;
         }
@@ -109,7 +107,7 @@ impl ProfilePagePerformanceTool {
         tokio::time::sleep(Duration::from_millis(duration)).await;
 
         // 6. Stop tracing
-        let _ = cdp_client.send_raw_command("Tracing.end", json!({})).await;
+        let _ = target.send_raw_command("Tracing.end", json!({})).await;
 
         // 7. Wait for stream handle
         let stream_handle = match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
@@ -124,7 +122,7 @@ impl ProfilePagePerformanceTool {
         // 8. Read the stream via IO domain
         let mut raw_json_data = String::new();
         loop {
-            let read_res = cdp_client
+            let read_res = target
                 .send_raw_command(
                     "IO.read",
                     json!({
@@ -152,22 +150,19 @@ impl ProfilePagePerformanceTool {
         }
 
         // 9. Close IO stream
-        let _ = cdp_client
+        let _ = target
             .send_raw_command("IO.close", json!({ "handle": stream_handle }))
             .await;
 
         // 10. Restore cache if disabled
         if disable_cache {
-            let _ = cdp_client
+            let _ = target
                 .send_raw_command(
                     "Network.setCacheDisabled",
                     json!({ "cacheDisabled": false }),
                 )
                 .await;
         }
-
-        // Drop lock before intensive parsing
-        drop(client_lock);
 
         // 11. Parse and Analyze
         let summary = Self::analyze_trace(&raw_json_data, duration);

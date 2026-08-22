@@ -12,6 +12,8 @@ use rust_mcp_sdk::{
 pub struct GetPerformanceMetricsTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
 }
 
 impl GetPerformanceMetricsTool {
@@ -23,14 +25,10 @@ impl GetPerformanceMetricsTool {
         let args: GetPerformanceMetricsTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
-
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().ok_or_else(|| {
-            CallToolError::from_message("Chrome connection is not established".to_string())
-        })?;
+        let target = session.target(args.tab_id.clone()).await?;
 
         // `Performance.getMetrics` returns a list of metrics.
-        let result = cdp_client
+        let result = target
             .send_raw_command("Performance.getMetrics", serde_json::json!({}))
             .await;
 

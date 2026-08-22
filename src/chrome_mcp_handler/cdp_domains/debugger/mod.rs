@@ -7,7 +7,6 @@ pub mod set_breakpoint;
 pub mod step_over;
 
 use crate::chrome_mcp_handler::{DebuggerState, ScriptInfo, extract_from_value};
-use cdp_browser_lite::CdpClient;
 use cdp_browser_lite::WsResponse;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -54,15 +53,22 @@ pub(crate) async fn process_debugger_event(event: &WsResponse, state: &Arc<Mutex
 }
 
 pub(crate) fn start_debugger_listener(
-    client: &mut CdpClient,
+    target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<DebuggerState>>,
 ) {
-    let mut debug_events = client.on_domain("Debugger");
+    let debug_events = target.on_domain("Debugger");
     tokio::spawn(async move {
-        use tokio_stream::StreamExt;
-        while let Some(Ok(event)) = debug_events.next().await {
-            process_debugger_event(&event, &state_clone).await;
-        }
+        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
+            debug_events,
+            "Debugger",
+            move |event| {
+                let state = state_clone.clone();
+                async move {
+                    process_debugger_event(&event, &state).await;
+                }
+            },
+        )
+        .await;
     });
 }
 
@@ -73,11 +79,9 @@ pub(crate) mod tests {
 
     fn make_event(method: &str, params: serde_json::Value) -> WsResponse {
         WsResponse {
-            id: None,
-            result: None,
-            error: None,
             method: Some(method.to_string()),
             params: Some(params),
+            ..Default::default()
         }
     }
 
@@ -217,11 +221,9 @@ pub(crate) mod tests {
     async fn test_event_without_method_ignored() {
         let state = Arc::new(Mutex::new(DebuggerState::default()));
         let event = WsResponse {
-            id: None,
-            result: None,
-            error: None,
             method: None,
             params: Some(json!({"scriptId": "1", "hash": "abc"})),
+            ..Default::default()
         };
 
         process_debugger_event(&event, &state).await;

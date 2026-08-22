@@ -12,6 +12,8 @@ use rust_mcp_sdk::{
 pub struct ListWebmcpInvocationsTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Optional filter: only return invocations with this status. Constraints: one of 'Pending', 'Completed', 'Error', 'Canceled'. Defaults to: None (all invocations).
     pub status: Option<String>,
 }
@@ -38,7 +40,8 @@ impl ListWebmcpInvocationsTool {
         }
 
         let session = handler.session(tool.instance_id.clone()).await?;
-        let st = session.webmcp_state.lock().await;
+        let webmcp_state = session.webmcp_state(tool.tab_id.clone())?;
+        let st = webmcp_state.lock().await;
         let mut invocations: Vec<serde_json::Value> = Vec::new();
 
         for invocation in st.invocations.values() {

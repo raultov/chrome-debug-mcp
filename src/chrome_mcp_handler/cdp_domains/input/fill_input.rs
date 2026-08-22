@@ -13,6 +13,8 @@ use serde_json::json;
 pub struct FillInputTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// CSS selector identifying the input element. Constraints: valid CSS selector matching an input/textarea/contenteditable element. Interactions: element must be focusable and writable. Defaults to: None (required).
     pub selector: String,
     /// Text content to insert. Constraints: any string (special chars escaped automatically). Interactions: replaces any existing text after focus; triggers input/change events. Defaults to: None (required).
@@ -28,9 +30,7 @@ impl FillInputTool {
         let args: FillInputTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
-
-        let mut client_lock = session.get_or_connect().await?;
-        let cdp_client = client_lock.as_mut().unwrap();
+        let target = session.target(args.tab_id.clone()).await?;
 
         // Escaping double quotes in the selector just in case
         let safe_selector = args.selector.replace("\"", "\\\"");
@@ -45,7 +45,7 @@ impl FillInputTool {
             safe_selector
         );
 
-        let eval_result = cdp_client
+        let eval_result = target
             .send_raw_command(
                 "Runtime.evaluate",
                 json!({
@@ -62,7 +62,7 @@ impl FillInputTool {
 
                 if value_obj.and_then(|v| v.as_bool()) == Some(true) {
                     // Element found and focused, now insert text
-                    let _ = cdp_client
+                    let _ = target
                         .send_raw_command(
                             "Input.insertText",
                             json!({
