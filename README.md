@@ -21,20 +21,30 @@ Using [`cdp-browser-lite`](https://crates.io/crates/cdp-browser-lite) underneath
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
 **🛡️ Privacy & Security**
-* **Isolated Profiles (Default)**: By default, every time the MCP server launches Chrome, it creates a **fresh, temporary user profile** in your system's temporary directory. This profile is completely independent of your main browser profile.
+* **Isolated Profiles (Default)**: Every time the MCP server launches Chrome, it creates a **fresh, temporary user profile** in your system's temporary directory. This profile is completely independent of your main browser profile, and it is **removed when the browser stops** — cookies, history, saved passwords, or session data from one session never bleed into the next.
 * **Incognito-like Experience**: No cookies, history, saved passwords, or session data from your personal accounts are shared with the managed instance by default.
 * **Identity Protection**: Even if an LLM has full control over the browser, it cannot access your logged-in sessions (e.g., Google, GitHub, banking) or impersonate you unless explicitly authorized.
 * **User Profile Mode**: Use the `--user-profile` flag to launch Chrome using your **existing system profile**. This is useful when you want the LLM to work within your active sessions (cookies, saved logins, etc.) without having to re-authenticate on every site. **Use with caution as this provides the LLM access to your personal browser data.**
   * ⚠️ **Note on `--user-profile`**: Due to Chrome's singleton architecture, if your browser is already open, it will delegate the request and **fail to open the debugging port**. You must either **close all existing Chrome instances** before starting the MCP, or start your browser manually with the `--remote-debugging-port=9222` flag.
 
-**🚀 Chrome Instance Management**
-* **Multi-Instance Support (New)**: Spawns and controls multiple concurrent, independent Chrome processes on dynamic ports, each with its own isolated profile directory. Limit the number of instances using the `--max-instances` flag.
+**🚀 Chrome Instance & Tab Management**
+* **Multi-Instance Support**: Spawns and controls multiple concurrent, independent Chrome processes on dynamic ports, each with its own isolated profile directory. Limit the number of instances using the `--max-instances` flag.
 * **Instance Registry Tools**: Use `open_instance`, `list_instances`, and `close_instance` to create, audit, and clean up additional instances. All existing tools accept an optional `instance_id` to route commands to the targeted browser.
+* **Multi-Tab Support (New)**: Controls multiple concurrent tabs within a single Chrome instance, multiplexing the event streams and commands over a single WebSocket connection.
+  * **Auto-Discovery**: Popups opened by target pages (e.g. `window.open()`) are automatically discovered, attached, and registered in the session's tab registry.
+  * **Cache Isolation**: State caches (console messages, network traffic, debugger parsed scripts, WebMCP tools) are strictly isolated per tab so events do not bleed across targets.
+* **Tab Registry Tools (New)**:
+  * `open_tab` — Opens a new tab, optionally with a custom label and target URL. Returns JSON with the `tab_id` to reuse in other tools.
+  * `list_tabs` — Lists all open and registered tabs for the instance as JSON (`tab_id`, `label`, `target_id`, `url`) plus the currently active tab. When no tabs are registered, tools fall back to the instance's default single-tab connection.
+  * `close_tab` — Closes a specific tab by ID and cleans up its cache state. Returns the new active tab.
+  * `switch_tab` — Changes the default active tab used when `tab_id` is omitted in tool calls, and optionally brings it to the foreground.
+* **LLM-Friendly Interface**: The lifecycle tools (`open_instance`, `close_instance`, `open_tab`, `list_tabs`, `switch_tab`, `close_tab`) return structured JSON so agents can chain calls without regex-parsing prose, and their descriptions follow the standard MCP template (side effects, prerequisites, returns, alternatives) so models rank them correctly.
+* **Target Routing (New)**: All tab-scoped tools accept an optional `tab_id` parameter to target commands and retrieve cache state from a specific tab. If omitted, the default active tab is targeted.
 * **Isolated Profiles**: Launches Chrome using a fresh, temporary profile by default, ensuring it doesn't share cookies, passwords, or session data with your main browser.
 * **User Profile Support**: Optionally use `--user-profile` to leverage your existing browser sessions and cookies.
 * **Dynamic Port Management**: Automatically detects if the default port (9222) is in use. 
-  * If used by another managed `chrome-debug-mcp` instance, it **automatically finds a new available port** to avoid collisions.
-  * If used by a user-started Chrome instance, it **automatically attaches** to it instead of spawning a new one.
+  * If the port is occupied by a Chrome instance exposing CDP (user-started or another managed `chrome-debug-mcp` instance), it **automatically attaches** to it instead of spawning a new one.
+  * Managed profiles are ephemeral, so there is no persistent per-port state; a second server sharing a port simply shares the same browser (and never kills an attached instance).
 * **Docker & Headless Support**: Full compatibility with Docker environments. Use the `--headless` flag to run Chrome without a GUI inside containers.
 
 * **Remote/Host Connection**: Use the `--host` argument to connect to a Chrome instance running on a different machine or the host machine (e.g., `--host host.docker.internal` from inside a container).
@@ -48,7 +58,7 @@ This server natively implements a suite of tools categorized by CDP domains and 
 
   Presets apply to the instance started by that call; a later `restart_chrome` that omits `features` clears them, mirroring how `proxy_server` behaves.
 * `stop_chrome`: Shuts down the managed Chrome instance gracefully (SIGTERM/SIGINT with fallback to SIGKILL).
-* **Robust Lifecycle**: Fixed issues with dangling Chrome processes and patched preferences for cleaner restarts.
+* **Robust Lifecycle**: Fixed issues with dangling Chrome processes. Ephemeral profiles are deleted on stop, and `cdp-browser-lite` sweeps orphaned profile dirs left behind by abrupt kills; the "Chrome didn't shut down correctly" restore bubble is suppressed via launch flags and profile patching.
 * **⚠️ Behaviour change**: Managed Chrome instances are now **terminated when the MCP server process exits** (including crashes). Previously a managed Chrome survived a server crash and was re-attached on restart; from now on it is killed. Attached (user-started) Chrome instances are never killed.
 
 **🔐 Proxy Authentication**
