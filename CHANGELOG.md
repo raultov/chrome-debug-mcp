@@ -1,8 +1,9 @@
 # Changelog
 
-## [Unreleased]
+## [1.3.1]
 ### Chores
-- Upgrade `rust-mcp-sdk` from `0.8.3` to `1.0.1`.
+- Upgrade `rust-mcp-sdk` from `0.8.3` to `1.0.1` (schema `0.9.6` → `0.10.3`, transport `0.8.0` → `1.0.0`, macros `0.8.1` → `1.0.0`). The only source change required is the new `message_observer: None` field in `McpServerOptions`; the protocol revision stays at `V2025_11_25`. Brings the upstream fix for the stdio stderr monitor busy loop, several race-condition fixes, and semver stability guarantees from the 1.x line.
+- Slimmer dependency tree: SDK 0.10.0 extracted Axum into a separate crate, dropping `axum`, `axum-core`, `axum-server`, `matchit`, `rustls-pemfile`, `serde_path_to_error`, `arc-swap`, `fs-err` and `httpdate`; only `sha2` is added.
 
 ## [1.3.0]
 ### Fixes
