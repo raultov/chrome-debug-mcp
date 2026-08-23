@@ -94,10 +94,11 @@ fn fix_array_items_type(map: &mut Map<String, Value>) {
         }
 
         // Check if the items object itself is an enum without a type, and set it to string
-        if let Some(Value::Object(items_map)) = map.get_mut("items") {
-            if items_map.contains_key("enum") && !items_map.contains_key("type") {
-                items_map.insert("type".to_string(), Value::String("string".to_string()));
-            }
+        if let Some(Value::Object(items_map)) = map.get_mut("items")
+            && items_map.contains_key("enum")
+            && !items_map.contains_key("type")
+        {
+            items_map.insert("type".to_string(), Value::String("string".to_string()));
         }
     }
 }
