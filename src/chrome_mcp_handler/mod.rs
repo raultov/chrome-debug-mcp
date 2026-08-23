@@ -1,5 +1,6 @@
 pub mod cdp_domains;
 pub mod chrome_instance;
+mod schema_compat;
 
 // use cdp_domains::debugger;
 use cdp_domains::custom::get_custom_events::GetCustomEventsTool;
@@ -655,44 +656,49 @@ impl ServerHandler for ChromeMcpHandler {
         _request: Option<PaginatedRequestParams>,
         _runtime: std::sync::Arc<dyn McpServer>,
     ) -> std::result::Result<ListToolsResult, RpcError> {
+        let tools = vec![
+            CaptureScreenshotTool::tool(),
+            ClickElementTool::tool(),
+            FillInputTool::tool(),
+            EvaluateJsTool::tool(),
+            NavigateTool::tool(),
+            InspectDomTool::tool(),
+            PauseOnLoadTool::tool(),
+            StepOverTool::tool(),
+            ResumeTool::tool(),
+            SearchScriptsTool::tool(),
+            SetBreakpointTool::tool(),
+            EvaluateOnCallFrameTool::tool(),
+            ReloadTool::tool(),
+            ScrollTool::tool(),
+            RemoveBreakpointTool::tool(),
+            RestartChromeTool::tool(),
+            StopChromeTool::tool(),
+            OpenInstanceTool::tool(),
+            ListInstancesTool::tool(),
+            CloseInstanceTool::tool(),
+            OpenTabTool::tool(),
+            ListTabsTool::tool(),
+            CloseTabTool::tool(),
+            SwitchTabTool::tool(),
+            GetNetworkLogsTool::tool(),
+            GetConsoleLogsTool::tool(),
+            GetPerformanceMetricsTool::tool(),
+            ProfilePagePerformanceTool::tool(),
+            EnableProxyAuthTool::tool(),
+            SendCdpCommandTool::tool(),
+            GetCustomEventsTool::tool(),
+            cdp_domains::webmcp::ListWebmcpToolsTool::tool(),
+            cdp_domains::webmcp::InvokeWebmcpToolTool::tool(),
+            cdp_domains::webmcp::GetWebmcpInvocationTool::tool(),
+            cdp_domains::webmcp::ListWebmcpInvocationsTool::tool(),
+        ];
+
         Ok(ListToolsResult {
-            tools: vec![
-                CaptureScreenshotTool::tool(),
-                ClickElementTool::tool(),
-                FillInputTool::tool(),
-                EvaluateJsTool::tool(),
-                NavigateTool::tool(),
-                InspectDomTool::tool(),
-                PauseOnLoadTool::tool(),
-                StepOverTool::tool(),
-                ResumeTool::tool(),
-                SearchScriptsTool::tool(),
-                SetBreakpointTool::tool(),
-                EvaluateOnCallFrameTool::tool(),
-                ReloadTool::tool(),
-                ScrollTool::tool(),
-                RemoveBreakpointTool::tool(),
-                RestartChromeTool::tool(),
-                StopChromeTool::tool(),
-                OpenInstanceTool::tool(),
-                ListInstancesTool::tool(),
-                CloseInstanceTool::tool(),
-                OpenTabTool::tool(),
-                ListTabsTool::tool(),
-                CloseTabTool::tool(),
-                SwitchTabTool::tool(),
-                GetNetworkLogsTool::tool(),
-                GetConsoleLogsTool::tool(),
-                GetPerformanceMetricsTool::tool(),
-                ProfilePagePerformanceTool::tool(),
-                EnableProxyAuthTool::tool(),
-                SendCdpCommandTool::tool(),
-                GetCustomEventsTool::tool(),
-                cdp_domains::webmcp::ListWebmcpToolsTool::tool(),
-                cdp_domains::webmcp::InvokeWebmcpToolTool::tool(),
-                cdp_domains::webmcp::GetWebmcpInvocationTool::tool(),
-                cdp_domains::webmcp::ListWebmcpInvocationsTool::tool(),
-            ],
+            tools: tools
+                .into_iter()
+                .map(schema_compat::normalize_tool)
+                .collect(),
             meta: None,
             next_cursor: None,
         })
@@ -943,6 +949,47 @@ mod tests {
         assert!(tool_names.contains(&"get_performance_metrics".to_string()));
         assert!(tool_names.contains(&"profile_page_performance".to_string()));
         assert!(tool_names.contains(&"enable_proxy_auth".to_string()));
+    }
+
+    /// Gemini rejects a function declaration whose `items` sits next to a
+    /// non-scalar `type`, so every published schema must use a single type
+    /// name and give any array an `items` subschema.
+    #[tokio::test]
+    async fn given_listed_tools_when_inspecting_schemas_then_types_are_scalar_and_arrays_are_typed()
+    {
+        let handler = ChromeMcpHandler::new_test();
+        let tools = handler
+            .handle_list_tools_request(None, Arc::new(DummyMcpServer {}))
+            .await
+            .expect("listing tools must succeed")
+            .tools;
+
+        fn assert_strict(schema: &serde_json::Value, path: &str) {
+            let serde_json::Value::Object(map) = schema else {
+                return;
+            };
+            if let Some(type_) = map.get("type") {
+                assert!(
+                    type_.is_string(),
+                    "{path}.type must be a single type name, got {type_}"
+                );
+            }
+            if map.contains_key("items") {
+                assert_eq!(
+                    map.get("type").and_then(|t| t.as_str()),
+                    Some("array"),
+                    "{path} declares items so it must be typed as an array; got {schema}"
+                );
+            }
+            for (key, child) in map {
+                assert_strict(child, &format!("{path}.{key}"));
+            }
+        }
+
+        for tool in tools {
+            let schema = serde_json::to_value(&tool.input_schema).unwrap();
+            assert_strict(&schema, &tool.name);
+        }
     }
 
     #[tokio::test]
