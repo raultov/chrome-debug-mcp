@@ -9,6 +9,15 @@ use tokio::sync::Mutex;
 
 pub type TabId = String;
 
+/// Per-tab domain state handles needed to wire the CDP listeners.
+pub(crate) type TabDomainStates = (
+    Arc<Mutex<DebuggerState>>,
+    Arc<Mutex<NetworkState>>,
+    Arc<Mutex<LogState>>,
+    Arc<Mutex<TracingState>>,
+    Arc<Mutex<WebmcpState>>,
+);
+
 pub(crate) struct TabEntry {
     pub(crate) tab: Tab,
     pub(crate) label: Option<String>,
@@ -19,6 +28,18 @@ pub(crate) struct TabEntry {
     pub(crate) tracing_state: Arc<Mutex<TracingState>>,
     pub(crate) custom_state: Arc<Mutex<CustomState>>,
     pub(crate) webmcp_state: Arc<Mutex<WebmcpState>>,
+}
+
+impl TabEntry {
+    pub(crate) fn domain_states(&self) -> TabDomainStates {
+        (
+            self.debugger_state.clone(),
+            self.network_state.clone(),
+            self.log_state.clone(),
+            self.tracing_state.clone(),
+            self.webmcp_state.clone(),
+        )
+    }
 }
 
 pub(crate) struct TabRegistry {
@@ -94,5 +115,10 @@ impl TabRegistry {
         }
         self.active_tab_id = Some(tab_id.to_string());
         Ok(())
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.tabs.clear();
+        self.active_tab_id = None;
     }
 }

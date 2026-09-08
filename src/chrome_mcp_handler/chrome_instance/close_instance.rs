@@ -26,6 +26,7 @@ impl CloseInstanceTool {
         if args.instance_id == "default" {
             // Stop the default instance, but do not remove it from the registry
             let session = handler.default_session.clone();
+            session.reset_connection_state().await;
             let mut mgr = session.chrome_manager.lock().await;
             mgr.stop_instance().await.map_err(|e| {
                 CallToolError::from_message(format!("Failed to stop default instance: {}", e))
@@ -41,6 +42,7 @@ impl CloseInstanceTool {
         }
 
         if let Some(session) = handler.registry.remove_session(&args.instance_id) {
+            session.reset_connection_state().await;
             let mut mgr = session.chrome_manager.lock().await;
             mgr.stop_instance().await.map_err(|e| {
                 CallToolError::from_message(format!("Failed to stop instance: {}", e))

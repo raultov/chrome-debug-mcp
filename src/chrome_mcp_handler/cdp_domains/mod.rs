@@ -1,3 +1,6 @@
+use crate::chrome_mcp_handler::chrome_instance::tab_registry::TabDomainStates;
+use cdp_browser_lite::{NoParams, Tab};
+
 pub mod custom;
 pub mod debugger;
 pub mod fetch;
@@ -61,3 +64,29 @@ pub(crate) mod event_pump;
 pub mod log;
 pub mod performance;
 pub mod tracing;
+
+/// Enables the standard CDP domains on a per-tab session. Errors are ignored:
+/// a missing domain only degrades that capability, it must not fail the tab.
+pub(crate) async fn enable_tab_domains(tab: &Tab) {
+    for cmd in [
+        "Runtime.enable",
+        "Page.enable",
+        "Network.enable",
+        "Log.enable",
+        "Debugger.enable",
+        "WebMCP.enable",
+    ] {
+        let _ = tab.send_raw_command(cmd, NoParams).await;
+    }
+}
+
+/// Starts every per-tab domain listener on the tab's CDP target.
+pub(crate) fn start_tab_listeners(tab: &Tab, states: TabDomainStates) {
+    let target = cdp_target::CdpTarget::Tab(tab.clone());
+    let (dbg, net, log, trace, webmcp) = states;
+    debugger::start_debugger_listener(&target, dbg);
+    network::start_network_listener(&target, net);
+    log::start_log_listener(&target, log);
+    tracing::start_tracing_listener(&target, trace);
+    webmcp::start_webmcp_listener(&target, webmcp);
+}

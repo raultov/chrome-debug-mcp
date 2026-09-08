@@ -323,13 +323,14 @@ async fn given_real_chrome_when_multiple_tabs_opened_then_console_logs_are_isola
         false,
         true, // headless
         false,
+        false,
     );
 
-    // Aseguramos que se conecte
+    // Ensure it connects
     let session = handler.session(None).await.expect("default session");
     let _ = session.get_or_connect().await.expect("connect");
 
-    // 1. Abrimos la Tab A
+    // 1. Open Tab A
     let params_a: rust_mcp_sdk::schema::CallToolRequestParams =
         serde_json::from_value(serde_json::json!({
             "name": "open_tab",
@@ -351,7 +352,7 @@ async fn given_real_chrome_when_multiple_tabs_opened_then_console_logs_are_isola
     // actual IDs instead of assuming 'tab-1'/'tab-2'.
     let tab_id_a = extract_tab_id(&open_a_res);
 
-    // 2. Abrimos la Tab B
+    // 2. Open Tab B
     let params_b: rust_mcp_sdk::schema::CallToolRequestParams =
         serde_json::from_value(serde_json::json!({
             "name": "open_tab",
@@ -374,7 +375,7 @@ async fn given_real_chrome_when_multiple_tabs_opened_then_console_logs_are_isola
         "tab A and tab B must be registered under distinct IDs"
     );
 
-    // 3. Emitimos un log de consola en la Tab A
+    // 3. Emit a console log in Tab A
     let params_eval: rust_mcp_sdk::schema::CallToolRequestParams =
         serde_json::from_value(serde_json::json!({
             "name": "evaluate_js",
@@ -392,10 +393,10 @@ async fn given_real_chrome_when_multiple_tabs_opened_then_console_logs_are_isola
     .await
     .expect("evaluate JS tab A");
 
-    // Damos un breve instante para que los hilos asíncronos del listener de eventos procesen el log
+    // Give the event listener's async threads a brief moment to process the log
     tokio::time::sleep(Duration::from_millis(500)).await;
 
-    // 4. Verificamos que el log sólo aparece en la Tab A y no en la Tab B
+    // 4. Verify the log appears only in Tab A and not in Tab B
     let params_logs_a: rust_mcp_sdk::schema::CallToolRequestParams =
         serde_json::from_value(serde_json::json!({
             "name": "get_console_logs",
@@ -442,7 +443,7 @@ async fn given_real_chrome_when_multiple_tabs_opened_then_console_logs_are_isola
         "Tab B must not contain tab A's log"
     );
 
-    // 5. Cerramos la Tab A y comprobamos que se elimina
+    // 5. Close Tab A and verify it is removed
     let params_close: rust_mcp_sdk::schema::CallToolRequestParams =
         serde_json::from_value(serde_json::json!({
             "name": "close_tab",

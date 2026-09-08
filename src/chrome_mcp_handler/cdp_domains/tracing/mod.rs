@@ -30,18 +30,14 @@ pub(crate) fn start_tracing_listener(
     target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<TracingState>>,
 ) {
-    let tracing_events = target.on_domain("Tracing");
-    tokio::spawn(async move {
-        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
-            tracing_events,
-            "Tracing",
-            move |event| {
-                let state = state_clone.clone();
-                async move {
-                    process_tracing_event(&event, &state).await;
-                }
-            },
-        )
-        .await;
-    });
+    crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener(
+        target,
+        "Tracing",
+        move |event| {
+            let state = state_clone.clone();
+            async move {
+                process_tracing_event(&event, &state).await;
+            }
+        },
+    );
 }

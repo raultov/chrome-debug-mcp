@@ -139,20 +139,16 @@ pub(crate) fn start_webmcp_listener(
     target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<WebmcpState>>,
 ) {
-    let webmcp_events = target.on_domain("WebMCP");
-    tokio::spawn(async move {
-        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
-            webmcp_events,
-            "WebMCP",
-            move |event| {
-                let state = state_clone.clone();
-                async move {
-                    process_webmcp_event(&event, &state).await;
-                }
-            },
-        )
-        .await;
-    });
+    crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener(
+        target,
+        "WebMCP",
+        move |event| {
+            let state = state_clone.clone();
+            async move {
+                process_webmcp_event(&event, &state).await;
+            }
+        },
+    );
 }
 
 #[cfg(test)]

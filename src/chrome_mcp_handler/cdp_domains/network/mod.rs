@@ -151,20 +151,16 @@ pub(crate) fn start_network_listener(
     target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<NetworkState>>,
 ) {
-    let network_events = target.on_domain("Network");
-    tokio::spawn(async move {
-        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
-            network_events,
-            "Network",
-            move |event| {
-                let state = state_clone.clone();
-                async move {
-                    process_network_event(&event, &state).await;
-                }
-            },
-        )
-        .await;
-    });
+    crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener(
+        target,
+        "Network",
+        move |event| {
+            let state = state_clone.clone();
+            async move {
+                process_network_event(&event, &state).await;
+            }
+        },
+    );
 }
 
 #[cfg(test)]

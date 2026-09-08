@@ -15,7 +15,7 @@ pub(crate) async fn pump_events<S, F, Fut>(mut events: S, domain: &'static str, 
 where
     S: Stream<Item = CdpResult<WsResponse>> + Unpin,
     F: FnMut(WsResponse) -> Fut,
-    Fut: std::future::Future<Output = ()>,
+    Fut: Future<Output = ()>,
 {
     while let Some(item) = events.next().await {
         match item {
@@ -25,6 +25,21 @@ where
             }
         }
     }
+}
+
+/// Spawns a background task that pumps CDP events for a given domain.
+pub(crate) fn spawn_domain_listener<F, Fut>(
+    target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
+    domain: &'static str,
+    process: F,
+) where
+    F: Fn(WsResponse) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    let events = target.on_domain(domain);
+    tokio::spawn(async move {
+        pump_events(events, domain, process).await;
+    });
 }
 
 #[cfg(test)]

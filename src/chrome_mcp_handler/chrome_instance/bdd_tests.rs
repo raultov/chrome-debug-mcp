@@ -152,6 +152,7 @@ mod tests {
             false,
             false,
             true, // user_profile = true
+            false,
         );
 
         let params: CallToolRequestParams = serde_json::from_value(json!({

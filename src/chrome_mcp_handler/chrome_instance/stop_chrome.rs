@@ -27,11 +27,7 @@ impl StopChromeTool {
         let session = handler.session(tool.instance_id.clone()).await?;
         let mut manager = session.chrome_manager.lock().await;
 
-        // Reset the client connection before stopping
-        {
-            let mut client_lock = session.client.lock().await;
-            *client_lock = None;
-        }
+        session.reset_connection_state().await;
 
         if let Err(e) = manager.stop_instance().await {
             return Err(CallToolError::from_message(format!(

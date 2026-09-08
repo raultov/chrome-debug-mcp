@@ -37,12 +37,7 @@ impl CloseTabTool {
         })?;
 
         // 2. Instruct the browser client to close it
-        let browser_client = {
-            let manager = session.chrome_manager.lock().await;
-            manager.browser_client().await.map_err(|e| {
-                CallToolError::from_message(format!("Failed to obtain browser client: {}", e))
-            })?
-        };
+        let browser_client = session.browser_client().await?;
 
         browser_client
             .close_tab(entry.tab.target_id())

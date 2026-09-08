@@ -1,3 +1,4 @@
+use crate::chrome_mcp_handler::cdp_domains;
 use crate::chrome_mcp_handler::chrome_instance::tab_registry::TabRegistry;
 use cdp_browser_lite::{BrowserClient, CdpResult, WsResponse};
 use std::sync::{Arc, RwLock};
@@ -12,7 +13,7 @@ pub(crate) fn start_tab_lifecycle_listener(
     let tabs_clone = tabs.clone();
 
     tokio::spawn(async move {
-        // Habilitamos el descubrimiento de targets para recibir targetCreated/targetDestroyed
+        // Enable target discovery to receive targetCreated/targetDestroyed events
         let _ = bc.set_discover_targets(true).await;
 
         while let Some(item) = target_events.next().await {
@@ -52,7 +53,7 @@ async fn process_target_event(
                 && ty == "page"
                 && !url.starts_with("chrome-extension://")
             {
-                // Verificamos si ya está en nuestro registro
+                // Check whether it is already in our registry
                 let already_exists = {
                     let registry = tabs.read().unwrap();
                     registry
@@ -62,65 +63,26 @@ async fn process_target_event(
                 };
 
                 if !already_exists {
-                    // Nos adjuntamos a la pestaña
+                    // Attach to the tab
                     if let Ok(tab) = browser_client.attach(target_id).await {
-                        // Habilitamos los dominios CDP necesarios para esta pestaña
-                        let _ = tab
-                            .send_raw_command("Runtime.enable", cdp_browser_lite::NoParams)
-                            .await;
-                        let _ = tab
-                            .send_raw_command("Page.enable", cdp_browser_lite::NoParams)
-                            .await;
-                        let _ = tab
-                            .send_raw_command("Network.enable", cdp_browser_lite::NoParams)
-                            .await;
-                        let _ = tab
-                            .send_raw_command("Log.enable", cdp_browser_lite::NoParams)
-                            .await;
-                        let _ = tab
-                            .send_raw_command("Debugger.enable", cdp_browser_lite::NoParams)
-                            .await;
-                        let _ = tab
-                            .send_raw_command("WebMCP.enable", cdp_browser_lite::NoParams)
-                            .await;
+                        cdp_domains::enable_tab_domains(&tab).await;
 
                         let states = {
                             let mut registry = tabs.write().unwrap();
                             if let Ok(tab_id) =
                                 registry.register_tab(tab.clone(), None, url.to_string())
                             {
-                                registry.tabs.get(&tab_id).map(|entry| {
-                                    (
-                                        entry.debugger_state.clone(),
-                                        entry.network_state.clone(),
-                                        entry.log_state.clone(),
-                                        entry.tracing_state.clone(),
-                                        entry.webmcp_state.clone(),
-                                    )
-                                })
+                                registry
+                                    .tabs
+                                    .get(&tab_id)
+                                    .map(|entry| entry.domain_states())
                             } else {
                                 None
                             }
                         };
 
-                        if let Some((dbg, net, log, trace, webmcp)) = states {
-                            let target =
-                                crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget::Tab(
-                                    tab.clone(),
-                                );
-                            crate::chrome_mcp_handler::cdp_domains::debugger::start_debugger_listener(&target, dbg);
-                            crate::chrome_mcp_handler::cdp_domains::network::start_network_listener(
-                                &target, net,
-                            );
-                            crate::chrome_mcp_handler::cdp_domains::log::start_log_listener(
-                                &target, log,
-                            );
-                            crate::chrome_mcp_handler::cdp_domains::tracing::start_tracing_listener(
-                                &target, trace,
-                            );
-                            crate::chrome_mcp_handler::cdp_domains::webmcp::start_webmcp_listener(
-                                &target, webmcp,
-                            );
+                        if let Some(states) = states {
+                            cdp_domains::start_tab_listeners(&tab, states);
                         }
                     }
                 }

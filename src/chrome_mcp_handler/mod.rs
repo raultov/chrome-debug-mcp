@@ -107,6 +107,23 @@ pub(crate) struct BrowserSession {
 }
 
 impl BrowserSession {
+    /// Resets the cached CDP client and clears the tab registry so that the
+    /// next tool call reconnects to a freshly launched Chrome instance.
+    pub(crate) async fn reset_connection_state(&self) {
+        *self.client.lock().await = None;
+        self.tabs.write().unwrap().clear();
+    }
+
+    /// Returns the browser-level CDP client used for tab management.
+    pub(crate) async fn browser_client(
+        &self,
+    ) -> std::result::Result<cdp_browser_lite::BrowserClient, CallToolError> {
+        let manager = self.chrome_manager.lock().await;
+        manager.browser_client().await.map_err(|e| {
+            CallToolError::from_message(format!("Failed to obtain browser client: {}", e))
+        })
+    }
+
     pub(crate) async fn get_or_connect(
         &self,
     ) -> std::result::Result<tokio::sync::MutexGuard<'_, Option<CdpClient>>, CallToolError> {
@@ -194,7 +211,7 @@ impl BrowserSession {
                         .send_raw_command("Debugger.enable", cdp_browser_lite::NoParams)
                         .await;
 
-                    // Iniciar el listener de ciclo de vida de pestañas (Target.*)
+                    // Start the tab lifecycle listener (Target.*)
                     if let Ok(browser_client) = {
                         let manager = self.chrome_manager.lock().await;
                         manager.browser_client().await
@@ -267,6 +284,35 @@ impl BrowserSession {
         }
     }
 
+    fn tab_or_fallback_state<T, F, G>(
+        &self,
+        tab_id: Option<String>,
+        tab_extractor: F,
+        fallback_extractor: G,
+    ) -> std::result::Result<Arc<Mutex<T>>, CallToolError>
+    where
+        F: FnOnce(&chrome_instance::tab_registry::TabEntry) -> Arc<Mutex<T>>,
+        G: FnOnce(&Self) -> Arc<Mutex<T>>,
+    {
+        let registry = self.tabs.read().unwrap();
+        if let Some(id) = tab_id {
+            return if let Some(entry) = registry.tabs.get(&id) {
+                Ok(tab_extractor(entry))
+            } else {
+                Err(CallToolError::from_message(format!(
+                    "Tab '{}' not found",
+                    id
+                )))
+            };
+        }
+        if let Some(ref active_id) = registry.active_tab_id
+            && let Some(entry) = registry.tabs.get(active_id)
+        {
+            return Ok(tab_extractor(entry));
+        }
+        Ok(fallback_extractor(self))
+    }
+
     #[expect(
         dead_code,
         reason = "Debugger state retrieval wired to tools starting in Phase 5 E2E"
@@ -275,69 +321,33 @@ impl BrowserSession {
         &self,
         tab_id: Option<String>,
     ) -> std::result::Result<Arc<Mutex<DebuggerState>>, CallToolError> {
-        let registry = self.tabs.read().unwrap();
-        if let Some(id) = tab_id {
-            if let Some(entry) = registry.tabs.get(&id) {
-                return Ok(entry.debugger_state.clone());
-            } else {
-                return Err(CallToolError::from_message(format!(
-                    "Tab '{}' not found",
-                    id
-                )));
-            }
-        }
-        if let Some(ref active_id) = registry.active_tab_id
-            && let Some(entry) = registry.tabs.get(active_id)
-        {
-            return Ok(entry.debugger_state.clone());
-        }
-        Ok(self.debugger_state.clone())
+        self.tab_or_fallback_state(
+            tab_id,
+            |entry| entry.debugger_state.clone(),
+            |s| s.debugger_state.clone(),
+        )
     }
 
     pub(crate) fn network_state(
         &self,
         tab_id: Option<String>,
     ) -> std::result::Result<Arc<Mutex<NetworkState>>, CallToolError> {
-        let registry = self.tabs.read().unwrap();
-        if let Some(id) = tab_id {
-            if let Some(entry) = registry.tabs.get(&id) {
-                return Ok(entry.network_state.clone());
-            } else {
-                return Err(CallToolError::from_message(format!(
-                    "Tab '{}' not found",
-                    id
-                )));
-            }
-        }
-        if let Some(ref active_id) = registry.active_tab_id
-            && let Some(entry) = registry.tabs.get(active_id)
-        {
-            return Ok(entry.network_state.clone());
-        }
-        Ok(self.network_state.clone())
+        self.tab_or_fallback_state(
+            tab_id,
+            |entry| entry.network_state.clone(),
+            |s| s.network_state.clone(),
+        )
     }
 
     pub(crate) fn log_state(
         &self,
         tab_id: Option<String>,
     ) -> std::result::Result<Arc<Mutex<cdp_domains::log::LogState>>, CallToolError> {
-        let registry = self.tabs.read().unwrap();
-        if let Some(id) = tab_id {
-            if let Some(entry) = registry.tabs.get(&id) {
-                return Ok(entry.log_state.clone());
-            } else {
-                return Err(CallToolError::from_message(format!(
-                    "Tab '{}' not found",
-                    id
-                )));
-            }
-        }
-        if let Some(ref active_id) = registry.active_tab_id
-            && let Some(entry) = registry.tabs.get(active_id)
-        {
-            return Ok(entry.log_state.clone());
-        }
-        Ok(self.log_state.clone())
+        self.tab_or_fallback_state(
+            tab_id,
+            |entry| entry.log_state.clone(),
+            |s| s.log_state.clone(),
+        )
     }
 
     #[expect(
@@ -348,69 +358,33 @@ impl BrowserSession {
         &self,
         tab_id: Option<String>,
     ) -> std::result::Result<Arc<Mutex<cdp_domains::tracing::TracingState>>, CallToolError> {
-        let registry = self.tabs.read().unwrap();
-        if let Some(id) = tab_id {
-            if let Some(entry) = registry.tabs.get(&id) {
-                return Ok(entry.tracing_state.clone());
-            } else {
-                return Err(CallToolError::from_message(format!(
-                    "Tab '{}' not found",
-                    id
-                )));
-            }
-        }
-        if let Some(ref active_id) = registry.active_tab_id
-            && let Some(entry) = registry.tabs.get(active_id)
-        {
-            return Ok(entry.tracing_state.clone());
-        }
-        Ok(self.tracing_state.clone())
+        self.tab_or_fallback_state(
+            tab_id,
+            |entry| entry.tracing_state.clone(),
+            |s| s.tracing_state.clone(),
+        )
     }
 
     pub(crate) fn custom_state(
         &self,
         tab_id: Option<String>,
     ) -> std::result::Result<Arc<Mutex<CustomState>>, CallToolError> {
-        let registry = self.tabs.read().unwrap();
-        if let Some(id) = tab_id {
-            if let Some(entry) = registry.tabs.get(&id) {
-                return Ok(entry.custom_state.clone());
-            } else {
-                return Err(CallToolError::from_message(format!(
-                    "Tab '{}' not found",
-                    id
-                )));
-            }
-        }
-        if let Some(ref active_id) = registry.active_tab_id
-            && let Some(entry) = registry.tabs.get(active_id)
-        {
-            return Ok(entry.custom_state.clone());
-        }
-        Ok(self.custom_state.clone())
+        self.tab_or_fallback_state(
+            tab_id,
+            |entry| entry.custom_state.clone(),
+            |s| s.custom_state.clone(),
+        )
     }
 
     pub(crate) fn webmcp_state(
         &self,
         tab_id: Option<String>,
     ) -> std::result::Result<Arc<Mutex<cdp_domains::webmcp::WebmcpState>>, CallToolError> {
-        let registry = self.tabs.read().unwrap();
-        if let Some(id) = tab_id {
-            if let Some(entry) = registry.tabs.get(&id) {
-                return Ok(entry.webmcp_state.clone());
-            } else {
-                return Err(CallToolError::from_message(format!(
-                    "Tab '{}' not found",
-                    id
-                )));
-            }
-        }
-        if let Some(ref active_id) = registry.active_tab_id
-            && let Some(entry) = registry.tabs.get(active_id)
-        {
-            return Ok(entry.webmcp_state.clone());
-        }
-        Ok(self.webmcp_state.clone())
+        self.tab_or_fallback_state(
+            tab_id,
+            |entry| entry.webmcp_state.clone(),
+            |s| s.webmcp_state.clone(),
+        )
     }
 }
 
@@ -420,6 +394,7 @@ pub struct ChromeMcpHandler {
     pub(crate) pool: Arc<cdp_browser_lite::BrowserPool>,
     pub(crate) base_params: chrome_instance::launch::LaunchParams,
     pub(crate) local_only: bool,
+    pub(crate) allow_cookie_import: bool,
     pub(crate) is_test: bool,
 }
 
@@ -473,6 +448,7 @@ impl ChromeMcpHandler {
         enable_automation: bool,
         headless: bool,
         user_profile: bool,
+        allow_cookie_import: bool,
     ) -> Self {
         let params = chrome_instance::launch::LaunchParams::new(
             host,
@@ -489,20 +465,14 @@ impl ChromeMcpHandler {
             Box::new(chrome_instance::cdp_browser_manager::RealLauncher { pool: pool.clone() }),
         );
         let session = Arc::new(BrowserSession {
-            client: Arc::new(tokio::sync::Mutex::new(None)),
-            debugger_state: Arc::new(tokio::sync::Mutex::new(DebuggerState::default())),
-            network_state: Arc::new(tokio::sync::Mutex::new(NetworkState::default())),
-            log_state: Arc::new(tokio::sync::Mutex::new(
-                cdp_domains::log::LogState::default(),
-            )),
-            tracing_state: Arc::new(tokio::sync::Mutex::new(
-                cdp_domains::tracing::TracingState::default(),
-            )),
-            custom_state: Arc::new(tokio::sync::Mutex::new(CustomState::default())),
-            webmcp_state: Arc::new(tokio::sync::Mutex::new(
-                cdp_domains::webmcp::WebmcpState::default(),
-            )),
-            chrome_manager: Arc::new(tokio::sync::Mutex::new(manager)),
+            client: Arc::new(Mutex::new(None)),
+            debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
+            network_state: Arc::new(Mutex::new(NetworkState::default())),
+            log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
+            tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
+            custom_state: Arc::new(Mutex::new(CustomState::default())),
+            webmcp_state: Arc::new(Mutex::new(cdp_domains::webmcp::WebmcpState::default())),
+            chrome_manager: Arc::new(Mutex::new(manager)),
             tabs: Arc::new(std::sync::RwLock::new(
                 chrome_instance::tab_registry::TabRegistry::new(16),
             )),
@@ -534,6 +504,7 @@ impl ChromeMcpHandler {
             pool,
             base_params: params,
             local_only,
+            allow_cookie_import,
             is_test: false,
         }
     }
@@ -556,22 +527,14 @@ impl ChromeMcpHandler {
         let registry = Arc::new(chrome_instance::registry::Registry::new(8));
 
         let session = Arc::new(BrowserSession {
-            client: Arc::new(tokio::sync::Mutex::new(None)),
-            debugger_state: Arc::new(tokio::sync::Mutex::new(DebuggerState::default())),
-            network_state: Arc::new(tokio::sync::Mutex::new(NetworkState::default())),
-            log_state: Arc::new(tokio::sync::Mutex::new(
-                cdp_domains::log::LogState::default(),
-            )),
-            tracing_state: Arc::new(tokio::sync::Mutex::new(
-                cdp_domains::tracing::TracingState::default(),
-            )),
-            custom_state: Arc::new(tokio::sync::Mutex::new(CustomState::default())),
-            webmcp_state: Arc::new(tokio::sync::Mutex::new(
-                cdp_domains::webmcp::WebmcpState::default(),
-            )),
-            chrome_manager: Arc::new(tokio::sync::Mutex::new(
-                chrome_instance::MockChromeManager::new(port),
-            )),
+            client: Arc::new(Mutex::new(None)),
+            debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
+            network_state: Arc::new(Mutex::new(NetworkState::default())),
+            log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
+            tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
+            custom_state: Arc::new(Mutex::new(CustomState::default())),
+            webmcp_state: Arc::new(Mutex::new(cdp_domains::webmcp::WebmcpState::default())),
+            chrome_manager: Arc::new(Mutex::new(chrome_instance::MockChromeManager::new(port))),
             tabs: Arc::new(std::sync::RwLock::new(
                 chrome_instance::tab_registry::TabRegistry::new(16),
             )),
@@ -594,6 +557,7 @@ impl ChromeMcpHandler {
             pool,
             base_params: params,
             local_only: false,
+            allow_cookie_import: false,
             is_test: true,
         }
     }
@@ -601,7 +565,7 @@ impl ChromeMcpHandler {
 
 impl Default for ChromeMcpHandler {
     fn default() -> Self {
-        Self::new_with_params("127.0.0.1".into(), 9222, false, false, false, false)
+        Self::new_with_params("127.0.0.1".into(), 9222, false, false, false, false, false)
     }
 }
 
@@ -654,7 +618,7 @@ impl ServerHandler for ChromeMcpHandler {
     async fn handle_list_tools_request(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _runtime: std::sync::Arc<dyn McpServer>,
+        _runtime: Arc<dyn McpServer>,
     ) -> std::result::Result<ListToolsResult, RpcError> {
         let tools = vec![
             CaptureScreenshotTool::tool(),
@@ -697,7 +661,7 @@ impl ServerHandler for ChromeMcpHandler {
         Ok(ListToolsResult {
             tools: tools
                 .into_iter()
-                .map(schema_compat::normalize_tool)
+                .map(|t| schema_compat::normalize_tool_with_options(t, self.allow_cookie_import))
                 .collect(),
             meta: None,
             next_cursor: None,
@@ -707,7 +671,7 @@ impl ServerHandler for ChromeMcpHandler {
     async fn handle_call_tool_request(
         &self,
         params: CallToolRequestParams,
-        _runtime: std::sync::Arc<dyn McpServer>,
+        _runtime: Arc<dyn McpServer>,
     ) -> std::result::Result<CallToolResult, CallToolError> {
         if params.name == "capture_screenshot" {
             CaptureScreenshotTool::handle(params, self).await
@@ -799,14 +763,14 @@ mod tests {
         }
         async fn set_client_details(
             &self,
-            _client_details: rust_mcp_sdk::schema::InitializeRequestParams,
+            _client_details: InitializeRequestParams,
         ) -> rust_mcp_sdk::error::SdkResult<()> {
             Ok(())
         }
-        fn server_info(&self) -> &rust_mcp_sdk::schema::InitializeResult {
+        fn server_info(&self) -> &InitializeResult {
             unimplemented!()
         }
-        fn client_info(&self) -> Option<rust_mcp_sdk::schema::InitializeRequestParams> {
+        fn client_info(&self) -> Option<InitializeRequestParams> {
             None
         }
         async fn auth_info(
@@ -833,20 +797,17 @@ mod tests {
         }
         async fn send(
             &self,
-            _message: rust_mcp_sdk::schema::schema_utils::MessageFromServer,
-            _request_id: Option<rust_mcp_sdk::schema::RequestId>,
+            _message: MessageFromServer,
+            _request_id: Option<RequestId>,
             _request_timeout: Option<std::time::Duration>,
-        ) -> rust_mcp_sdk::error::SdkResult<Option<rust_mcp_sdk::schema::schema_utils::ClientMessage>>
-        {
+        ) -> rust_mcp_sdk::error::SdkResult<Option<ClientMessage>> {
             Ok(None)
         }
         async fn send_batch(
             &self,
-            _messages: Vec<rust_mcp_sdk::schema::schema_utils::ServerMessage>,
+            _messages: Vec<ServerMessage>,
             _request_timeout: Option<std::time::Duration>,
-        ) -> rust_mcp_sdk::error::SdkResult<
-            Option<Vec<rust_mcp_sdk::schema::schema_utils::ClientMessage>>,
-        > {
+        ) -> rust_mcp_sdk::error::SdkResult<Option<Vec<ClientMessage>>> {
             Ok(None)
         }
     }
@@ -911,14 +872,23 @@ mod tests {
             true,
             true,
             false,
+            false,
         );
         assert!(handler.local_only);
+        assert!(!handler.allow_cookie_import);
     }
 
     #[test]
     fn test_chrome_mcp_handler_new_with_automation() {
-        let handler =
-            ChromeMcpHandler::new_with_params("127.0.0.1".into(), 9444, true, true, false, true);
+        let handler = ChromeMcpHandler::new_with_params(
+            "127.0.0.1".into(),
+            9444,
+            true,
+            true,
+            false,
+            true,
+            false,
+        );
         assert!(handler.local_only);
     }
 

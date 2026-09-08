@@ -1,4 +1,5 @@
 use crate::chrome_mcp_handler::ChromeMcpHandler;
+use crate::chrome_mcp_handler::cdp_domains;
 use rust_mcp_sdk::{
     macros,
     schema::{CallToolError, CallToolRequestParams, CallToolResult},
@@ -28,7 +29,7 @@ impl OpenTabTool {
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
 
-        // Aseguramos que la instancia esté corriendo
+        // Ensure the instance is running
         {
             let mut manager = session.chrome_manager.lock().await;
             manager.ensure_instance().await.map_err(|e| {
@@ -47,13 +48,8 @@ impl OpenTabTool {
             )));
         }
 
-        // Creamos la pestaña usando la conexión a nivel de navegador (browser_client)
-        let browser_client = {
-            let manager = session.chrome_manager.lock().await;
-            manager.browser_client().await.map_err(|e| {
-                CallToolError::from_message(format!("Failed to obtain browser client: {}", e))
-            })?
-        };
+        // Create the tab using the browser-level connection (browser_client)
+        let browser_client = session.browser_client().await?;
 
         let tab = browser_client
             .new_tab(&url)
@@ -62,7 +58,7 @@ impl OpenTabTool {
 
         let target_id = tab.target_id().to_string();
 
-        // Registramos la pestaña en nuestro TabRegistry
+        // Register the tab in our TabRegistry
         let tab_id = {
             let mut registry = session.tabs.write().unwrap();
             registry
@@ -75,47 +71,18 @@ impl OpenTabTool {
                 })?
         };
 
-        // Habilitamos los dominios CDP necesarios para esta pestaña
-        let _ = tab
-            .send_raw_command("Runtime.enable", cdp_browser_lite::NoParams)
-            .await;
-        let _ = tab
-            .send_raw_command("Page.enable", cdp_browser_lite::NoParams)
-            .await;
-        let _ = tab
-            .send_raw_command("Network.enable", cdp_browser_lite::NoParams)
-            .await;
-        let _ = tab
-            .send_raw_command("Log.enable", cdp_browser_lite::NoParams)
-            .await;
-        let _ = tab
-            .send_raw_command("Debugger.enable", cdp_browser_lite::NoParams)
-            .await;
-        let _ = tab
-            .send_raw_command("WebMCP.enable", cdp_browser_lite::NoParams)
-            .await;
+        cdp_domains::enable_tab_domains(&tab).await;
 
         let states = {
             let registry = session.tabs.read().unwrap();
-            registry.tabs.get(&tab_id).map(|entry| {
-                (
-                    entry.debugger_state.clone(),
-                    entry.network_state.clone(),
-                    entry.log_state.clone(),
-                    entry.tracing_state.clone(),
-                    entry.webmcp_state.clone(),
-                )
-            })
+            registry
+                .tabs
+                .get(&tab_id)
+                .map(|entry| entry.domain_states())
         };
 
-        if let Some((dbg, net, log, trace, webmcp)) = states {
-            let target =
-                crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget::Tab(tab.clone());
-            crate::chrome_mcp_handler::cdp_domains::debugger::start_debugger_listener(&target, dbg);
-            crate::chrome_mcp_handler::cdp_domains::network::start_network_listener(&target, net);
-            crate::chrome_mcp_handler::cdp_domains::log::start_log_listener(&target, log);
-            crate::chrome_mcp_handler::cdp_domains::tracing::start_tracing_listener(&target, trace);
-            crate::chrome_mcp_handler::cdp_domains::webmcp::start_webmcp_listener(&target, webmcp);
+        if let Some(states) = states {
+            cdp_domains::start_tab_listeners(&tab, states);
         }
 
         Ok(CallToolResult::text_content(vec![

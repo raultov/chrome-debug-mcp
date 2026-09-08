@@ -28,7 +28,7 @@ impl SwitchTabTool {
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
 
-        // 1. Obtener la tab y cambiar el ID activo
+        // 1. Look up the tab and set it as the active ID
         let tab = {
             let mut registry = session.tabs.write().unwrap();
             registry
@@ -37,7 +37,7 @@ impl SwitchTabTool {
             registry.tabs.get(&args.tab_id).unwrap().tab.clone()
         };
 
-        // 2. Traer al frente en Chrome si se solicita
+        // 2. Bring it to the foreground in Chrome if requested
         let activate = args.activate.unwrap_or(true);
         if activate {
             tab.activate().await.map_err(|e| {
