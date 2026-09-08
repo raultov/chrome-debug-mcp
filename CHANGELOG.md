@@ -1,6 +1,9 @@
 # Changelog
 
-## [Unreleased]
+## [1.4.1]
+### Fixes
+- Switched `cdp-browser-lite` dependency to published `0.3.5` from crates.io, removing local path patch so downstream builds, CI, Docker, and `cargo publish` succeed cleanly.
+
 ### Chores
 - Added code duplication quality gate using `cargo-dupes` (`dupes.toml`) and unified local dev workflow via `Makefile`.
 - Refactored `BrowserSession` state getter methods (`tab_or_fallback_state`) reducing exact duplication to 3.1%.

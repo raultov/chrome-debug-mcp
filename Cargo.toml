@@ -1,6 +1,6 @@
 [package]
 name = "chrome-debug-mcp"
-version = "1.4.0"
+version = "1.4.1"
 edition = "2024"
 authors = ["raultov <raultov@protonmail.com>"]
 homepage = "https://github.com/raultov/chrome-debug-mcp"
@@ -21,7 +21,7 @@ eula = false
 [dependencies]
 anyhow = "1.0.104"
 async-trait = "0.1.92"
-cdp-browser-lite = { version = "0.3.4", features = ["test-support"] }
+cdp-browser-lite = { version = "0.3.5", features = ["test-support"] }
 chrono = "0.4.45"
 clap = { version = "4.6.6", features = ["derive"] }
 rust-mcp-sdk = "1.0.1"
@@ -31,12 +31,6 @@ tempfile = "3"
 tokio = { version = "1.53.1", features = ["full"] }
 tokio-stream = "0.1.19"
 url = "2.5"
-
-# Local checkout with `BrowserConfig::env_var` support (seeded-cookie launches
-# need to inject the desktop-session environment for keyring/portal access).
-# Remove once cdp-browser-lite >= 0.3.5 is published.
-[patch.crates-io]
-cdp-browser-lite = { path = "../cdp-browser-lite" }
 
 # The profile that 'dist' will build with
 [profile.dist]

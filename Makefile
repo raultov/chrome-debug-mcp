@@ -1,4 +1,4 @@
-.PHONY: all fmt fmt-check clippy test dupes dupes-cleanup check build install help
+.PHONY: all fmt fmt-check clippy test dupes dupes-cleanup publish-check check build install help
 
 # Default target: run all mandatory quality gates
 all: check
@@ -29,8 +29,12 @@ dupes-cleanup:
 	@test -x "$$(command -v cargo-dupes)" || (echo "cargo-dupes not found. Installing..." && cargo install cargo-dupes --version 0.2.1 --locked)
 	cargo dupes cleanup --dry-run
 
-# Run all local quality gates sequentially (fmt, clippy, unit tests, dupes)
-check: fmt-check clippy test dupes
+# Verify the crate packages cleanly without local path overrides or missing dependencies
+publish-check:
+	cargo publish --dry-run --allow-dirty
+
+# Run all local quality gates sequentially (fmt, clippy, unit tests, dupes, publish-check)
+check: fmt-check clippy test dupes publish-check
 
 # Build release binary
 build:
@@ -64,5 +68,6 @@ help:
 	@echo "  make test          - Run unit tests"
 	@echo "  make dupes         - Run code duplication check with cargo-dupes (auto-installs if missing)"
 	@echo "  make dupes-cleanup - Show stale duplication suppressions"
+	@echo "  make publish-check - Verify cargo publish packaging dry-run"
 	@echo "  make build         - Build release binary"
 	@echo "  make install       - Build release binary and copy it to ~/.cargo/bin"
