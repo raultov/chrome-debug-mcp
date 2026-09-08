@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+### Chores
+- Added code duplication quality gate using `cargo-dupes` (`dupes.toml`) and unified local dev workflow via `Makefile`.
+- Refactored `BrowserSession` state getter methods (`tab_or_fallback_state`) reducing exact duplication to 3.1%.
+
+## [1.4.0]
+### Features
+- Added optional Chrome Cookie Import feature (`--allow-cookie-import` server flag).
+- `navigate`, `open_instance`, and `restart_chrome` now accept `copy_cookies: true` and optional `source_profile` to copy the user's real Chrome session cookies into isolated ephemeral profiles.
+- Cross-platform cookie decryption support: Linux (`v11` via desktop keyring + `os_crypt.selected_backend` preservation), macOS (`v10` via Keychain), and Windows (`v10`/`v20` via DPAPI/App-Bound Encryption in `os_crypt`).
+- Added destructive relaunch guard for `navigate`: attempting to import cookies into a running browser requires `confirm_restart: true` after listing open tabs that would be closed.
+- Cookie import properties (`copy_cookies`, `source_profile`, `confirm_restart`) are automatically hidden from `inputSchema` when `--allow-cookie-import` is disabled.
+
+### Fixes
+- Fixed a bug where `restart_chrome`, `stop_chrome`, and `close_instance` left stale tabs in `TabRegistry`, causing subsequent tab calls to target dead WebSocket handles. `TabRegistry::clear()` now resets the tab list on instance stop/restart.
+
 ## [1.3.2]
 ### Fixes
 - Fix schema normalization for tools with nested array items. Specifically, if a tool parameter has an `items` field but does not define `type: "array"`, it is normalized to `type: "array"`. If the inner items are enums, their type is normalized to `type: "string"` as required by strict tool-calling engines.
