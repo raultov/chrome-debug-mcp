@@ -171,8 +171,6 @@ dependencies = [
 [[package]]
 name = "cdp-browser-lite"
 version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5557a65ab95eb4025da6c0f827818ac2770a922bf30bf9baf3d825df7ba0c90"
 dependencies = [
  "cdp-lite",
  "futures-util",
@@ -243,6 +241,7 @@ dependencies = [
  "rust-mcp-sdk",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tokio-tungstenite 0.30.0",

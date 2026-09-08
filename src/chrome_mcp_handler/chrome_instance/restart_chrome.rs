@@ -20,6 +20,14 @@ pub struct RestartChromeTool {
     /// Chrome capability presets to enable on the new instance. Constraints: closed set - 'WEB_MCP' turns on the experimental WebMCP surface for sites that expose tools to the browser; 'WEBGL_SOFTWARE' forces SwiftShader software WebGL for GPU-less environments. Arbitrary Chrome flags are not accepted. Interactions: presets apply only to the instance started by this call and are cleared by a later restart that omits them. Defaults to: [] (no presets).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub features: Option<Vec<ChromeFeature>>,
+
+    /// Optional flag to copy cookies from the user's real Chrome installation into this instance's isolated profile. Requires server running with --allow-cookie-import.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_cookies: Option<bool>,
+
+    /// Optional source profile name to copy cookies from (e.g. 'Default', 'Profile 1'). Defaults to the last used profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_profile: Option<String>,
 }
 
 impl RestartChromeTool {
@@ -33,13 +41,18 @@ impl RestartChromeTool {
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
 
         let session = handler.session(tool.instance_id.clone()).await?;
+
+        let seed_report = super::cookie_seed::prepare_seed_report(
+            tool.copy_cookies == Some(true),
+            tool.source_profile.as_deref(),
+            handler.allow_cookie_import,
+            handler.base_params.user_profile,
+        )
+        .map_err(CallToolError::from_message)?;
+
         let mut manager = session.chrome_manager.lock().await;
 
-        // Reset the client connection before stopping/starting
-        {
-            let mut client_lock = session.client.lock().await;
-            *client_lock = None;
-        }
+        session.reset_connection_state().await;
 
         if let Err(e) = manager.stop_instance().await {
             return Err(CallToolError::from_message(format!(
@@ -49,6 +62,7 @@ impl RestartChromeTool {
         }
 
         manager.set_proxy(tool.proxy_server);
+        manager.set_seed_profile(seed_report);
 
         let features = tool.features.unwrap_or_else(|| manager.features().to_vec());
         let summary = describe_features(&features);

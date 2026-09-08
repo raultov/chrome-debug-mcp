@@ -30,6 +30,10 @@ pub struct OpenInstanceTool {
     pub proxy: Option<String>,
     /// Optional feature presets (e.g. WEB_MCP, WEBGL_SOFTWARE).
     pub features: Option<Vec<ChromeFeature>>,
+    /// Optional flag to copy cookies from the user's real Chrome installation into this instance's isolated profile. Requires server running with --allow-cookie-import.
+    pub copy_cookies: Option<bool>,
+    /// Optional source profile name to copy cookies from (e.g. 'Default', 'Profile 1'). Defaults to the last used profile.
+    pub source_profile: Option<String>,
 }
 
 impl OpenInstanceTool {
@@ -75,21 +79,29 @@ impl OpenInstanceTool {
             child_params.set_proxy(Some(proxy));
         }
 
-        let chrome_manager: Arc<
-            Mutex<dyn crate::chrome_mcp_handler::chrome_instance::ChromeManager>,
-        > = if handler.is_test {
+        let seed_report = super::cookie_seed::prepare_seed_report(
+            args.copy_cookies == Some(true),
+            args.source_profile.as_deref(),
+            handler.allow_cookie_import,
+            handler.base_params.user_profile,
+        )
+        .map_err(CallToolError::from_message)?;
+
+        let chrome_manager: Arc<Mutex<dyn ChromeManager>> = if handler.is_test {
             let mock_port = 9000 + handler.registry.list_descriptors().len() as u16;
             let mut mock_mgr =
                 crate::chrome_mcp_handler::chrome_instance::MockChromeManager::new(mock_port);
             mock_mgr.set_features(child_params.features().to_vec());
+            mock_mgr.set_seed_profile(seed_report);
             Arc::new(Mutex::new(mock_mgr))
         } else {
-            let manager = CdpBrowserManager::new(
+            let mut manager = CdpBrowserManager::new(
                 child_params.clone(),
                 Box::new(RealLauncher {
                     pool: handler.pool.clone(),
                 }),
             );
+            manager.set_seed_profile(seed_report);
             Arc::new(Mutex::new(manager))
         };
 

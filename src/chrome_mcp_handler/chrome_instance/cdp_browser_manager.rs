@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use cdp_browser_lite::{BrowserClient, BrowserConfig, BrowserError, CdpClient};
 
+use crate::chrome_mcp_handler::chrome_instance::cookie_seed::SeedReport;
 use crate::chrome_mcp_handler::chrome_instance::launch::{LaunchParams, LaunchPlan};
 
 pub(crate) struct CdpBrowserManager {
@@ -8,6 +9,7 @@ pub(crate) struct CdpBrowserManager {
     pub(crate) launcher: Box<dyn BrowserLauncher>,
     pub(crate) browser: Option<Box<dyn ManagedBrowser>>,
     pub(crate) resolved_port: u16,
+    pub(crate) seed_report: Option<SeedReport>,
 }
 
 impl CdpBrowserManager {
@@ -18,6 +20,7 @@ impl CdpBrowserManager {
             launcher,
             browser: None,
             resolved_port,
+            seed_report: None,
         }
     }
 }
@@ -42,6 +45,10 @@ impl crate::chrome_mcp_handler::chrome_instance::ChromeManager for CdpBrowserMan
     async fn stop_instance(&mut self) -> anyhow::Result<()> {
         if let Some(browser) = self.browser.take() {
             browser.stop().await?;
+        }
+        if let Some(seed) = self.seed_report.take() {
+            let _ = std::fs::remove_dir_all(&seed.dir);
+            self.params.set_seed_profile(None);
         }
         self.resolved_port = self.params.configured_port();
         Ok(())
@@ -76,15 +83,32 @@ impl crate::chrome_mcp_handler::chrome_instance::ChromeManager for CdpBrowserMan
         self.params.set_proxy(proxy);
     }
 
-    fn features(&self) -> &[crate::chrome_mcp_handler::chrome_instance::launch::ChromeFeature] {
-        self.params.features()
-    }
-
     fn set_features(
         &mut self,
         features: Vec<crate::chrome_mcp_handler::chrome_instance::launch::ChromeFeature>,
     ) {
         self.params.set_features(features);
+    }
+
+    fn features(&self) -> &[crate::chrome_mcp_handler::chrome_instance::launch::ChromeFeature] {
+        self.params.features()
+    }
+
+    async fn is_running(&self) -> bool {
+        if let Some(browser) = self.browser.as_ref() {
+            browser.is_alive().await
+        } else {
+            false
+        }
+    }
+
+    fn set_seed_profile(&mut self, seed: Option<SeedReport>) {
+        if let Some(ref s) = seed {
+            self.params.set_seed_profile(Some(s.dir.clone()));
+        } else {
+            self.params.set_seed_profile(None);
+        }
+        self.seed_report = seed;
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

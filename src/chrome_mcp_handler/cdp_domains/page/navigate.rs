@@ -7,7 +7,7 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "navigate",
-    description = "Navigates the current Chrome tab to a specified URL, loading new page content. Side effects: destructive of current page state; discards unsaved work. Prerequisites: requires an active Chrome tab; URL must be valid and accessible (subject to local-only restrictions if enabled). Returns: navigation confirmation. Auth requirements: subject to same-origin policy; may require credentials for restricted URLs. Rate limits: none. Use this to change the current page. Alternatives: 'reload' to refresh current page."
+    description = "Navigates the current Chrome tab to a specified URL, loading new page content. Side effects: destructive of current page state; discards unsaved work. Prerequisites: requires an active Chrome tab; URL must be valid and accessible (subject to local-only restrictions if enabled). Returns: navigation confirmation. Auth requirements: subject to same-origin policy; may require credentials for restricted URLs. Rate limits: none. Use this to change the current page. Alternatives: 'reload' to refresh current page. Note: copy_cookies imports the user's real Chrome cookies, giving this browser access to their authenticated sessions — always ask the user before setting it to true. If the target instance is already running, setting copy_cookies is destructive: the instance is relaunched and all its open tabs are closed. In that case the call fails first with the list of tabs to be closed, so you can warn the user and re-issue with confirm_restart: true."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct NavigateTool {
@@ -17,6 +17,15 @@ pub struct NavigateTool {
     pub tab_id: Option<String>,
     /// Target URL to navigate to. Constraints: valid absolute URL (http/https/file). Interactions: navigation is blocked if MCP server started with 'local' flag and URL is not localhost/127.0.0.1/192.168.x.x/*.local. Defaults to: None (required).
     pub url: String,
+    /// Optional flag to copy cookies from the user's real Chrome installation into this instance's isolated profile. Requires server running with --allow-cookie-import.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_cookies: Option<bool>,
+    /// Optional source profile name to copy cookies from (e.g. 'Default', 'Profile 1'). Defaults to the last used profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_profile: Option<String>,
+    /// Acknowledges that importing cookies into an already-running instance requires relaunching it, closing all of its tabs. Only meaningful together with copy_cookies. Defaults to: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirm_restart: Option<bool>,
 }
 
 impl NavigateTool {
@@ -34,6 +43,92 @@ impl NavigateTool {
                 "Navigation to '{}' is blocked. This MCP server is running with the 'local' argument, which restricts navigation to local addresses only (localhost, 127.0.0.1, 192.168.x.x, or *.local). To allow navigation to external addresses, restart the MCP server without the 'local' argument.",
                 args.url
             )));
+        }
+
+        if args.copy_cookies == Some(true) {
+            if !handler.allow_cookie_import {
+                return Err(CallToolError::from_message(
+                    "Cookie import is disabled. Restart the MCP server with the '--allow-cookie-import' argument to enable it.".to_string()
+                ));
+            }
+            if handler.base_params.user_profile {
+                return Err(CallToolError::from_message(
+                    "Cookie import is redundant when running in --user-profile mode, as the user's real profile is already in use.".to_string()
+                ));
+            }
+
+            let source = crate::chrome_mcp_handler::chrome_instance::cookie_seed::resolve_source(
+                args.source_profile.as_deref(),
+                &crate::chrome_mcp_handler::chrome_instance::cookie_seed::RealEnvProvider,
+                &crate::chrome_mcp_handler::chrome_instance::cookie_seed::RealFsProbe,
+            )
+            .map_err(CallToolError::from_message)?;
+
+            let is_running = {
+                let mgr = session.chrome_manager.lock().await;
+                mgr.is_running().await
+            };
+
+            if is_running {
+                if args.confirm_restart != Some(true) {
+                    let instance_id_str = args.instance_id.as_deref().unwrap_or("default");
+                    let (tab_count, tab_list) = {
+                        let registry = session.tabs.read().unwrap();
+                        let count = registry.tabs.len();
+                        let list = registry
+                            .tabs
+                            .iter()
+                            .map(|(id, entry)| {
+                                let label_str = entry
+                                    .label
+                                    .as_ref()
+                                    .map(|l| format!(" \"{l}\""))
+                                    .unwrap_or_default();
+                                let is_active = registry.active_tab_id.as_ref() == Some(id);
+                                let active_str = if is_active { " (active)" } else { "" };
+                                format!("  - {id}{label_str}{active_str}: {}", entry.url)
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        (count, list)
+                    };
+
+                    let tab_info = if tab_count > 0 {
+                        format!(
+                            "its {tab_count} open tab(s), discarding their state (unsaved form input, breakpoints, and captured logs):\n{tab_list}"
+                        )
+                    } else {
+                        "any open tabs".to_string()
+                    };
+
+                    return Err(CallToolError::from_message(format!(
+                        "Cookie import requires relaunching instance '{instance_id_str}' with a seeded profile: a running browser cannot pick up cookies from disk.\n\nThis will CLOSE the instance and {tab_info}\n\nTell the user exactly which tabs will be closed and ask them to confirm. Only if they agree, call navigate again with the same arguments plus `confirm_restart: true`."
+                    )));
+                }
+
+                let report = crate::chrome_mcp_handler::chrome_instance::cookie_seed::seed_cookies(
+                    &source,
+                    &crate::chrome_mcp_handler::chrome_instance::cookie_seed::RealEnvProvider,
+                    &crate::chrome_mcp_handler::chrome_instance::cookie_seed::RealFsProbe,
+                )
+                .map_err(CallToolError::from_message)?;
+
+                crate::chrome_mcp_handler::chrome_instance::seeded_relaunch::relaunch_seeded(
+                    &session, report,
+                )
+                .await
+                .map_err(CallToolError::from_message)?;
+            } else if !is_running {
+                let report = crate::chrome_mcp_handler::chrome_instance::cookie_seed::seed_cookies(
+                    &source,
+                    &crate::chrome_mcp_handler::chrome_instance::cookie_seed::RealEnvProvider,
+                    &crate::chrome_mcp_handler::chrome_instance::cookie_seed::RealFsProbe,
+                )
+                .map_err(CallToolError::from_message)?;
+
+                let mut mgr = session.chrome_manager.lock().await;
+                mgr.set_seed_profile(Some(report));
+            }
         }
 
         let target = session.target(args.tab_id.clone()).await?;
@@ -203,5 +298,48 @@ mod tests {
             let result = NavigateTool::handle(params, &handler).await;
             assert!(result.is_err(), "URL {} should be blocked", url);
         }
+    }
+
+    #[tokio::test]
+    async fn test_navigate_cookie_import_disabled_by_default() {
+        let handler = ChromeMcpHandler::new_test();
+
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "navigate",
+            "arguments": {
+                "url": "https://example.com",
+                "copy_cookies": true
+            }
+        }))
+        .unwrap();
+
+        let result = NavigateTool::handle(params, &handler).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Cookie import is disabled"));
+    }
+
+    #[tokio::test]
+    async fn test_navigate_cookie_import_user_profile_error() {
+        let mut handler = ChromeMcpHandler::new_test();
+        handler.allow_cookie_import = true;
+        handler.base_params.user_profile = true;
+
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "navigate",
+            "arguments": {
+                "url": "https://example.com",
+                "copy_cookies": true
+            }
+        }))
+        .unwrap();
+
+        let result = NavigateTool::handle(params, &handler).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("redundant when running in --user-profile mode")
+        );
     }
 }

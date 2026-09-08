@@ -1,11 +1,13 @@
 pub mod cdp_browser_manager;
 pub mod close_tab;
+pub(crate) mod cookie_seed;
 #[cfg(test)]
 pub mod integration_tests;
 pub mod launch;
 pub mod list_tabs;
 pub mod open_tab;
 pub mod restart_chrome;
+pub(crate) mod seeded_relaunch;
 pub mod stop_chrome;
 pub mod switch_tab;
 pub(crate) mod tab_lifecycle;
@@ -14,6 +16,7 @@ pub(crate) mod tab_registry;
 use async_trait::async_trait;
 use cdp_browser_lite::{BrowserClient, CdpClient};
 
+use crate::chrome_mcp_handler::chrome_instance::cookie_seed::SeedReport;
 use crate::chrome_mcp_handler::chrome_instance::launch::ChromeFeature;
 
 #[async_trait]
@@ -39,6 +42,12 @@ pub trait ChromeManager: Send + Sync {
     fn set_features(&mut self, features: Vec<ChromeFeature>);
     /// Returns the currently configured capability presets.
     fn features(&self) -> &[ChromeFeature];
+    /// Checks whether the underlying browser process is active and responding.
+    async fn is_running(&self) -> bool {
+        false
+    }
+    /// Sets or clears the seed profile report for the next launch.
+    fn set_seed_profile(&mut self, _seed: Option<SeedReport>) {}
     #[cfg_attr(
         not(test),
         expect(
@@ -52,6 +61,8 @@ pub trait ChromeManager: Send + Sync {
 pub struct MockChromeManager {
     port: u16,
     features: Vec<ChromeFeature>,
+    running: bool,
+    seed_report: Option<SeedReport>,
 }
 
 impl MockChromeManager {
@@ -59,19 +70,32 @@ impl MockChromeManager {
         Self {
             port,
             features: Vec::new(),
+            running: false,
+            seed_report: None,
         }
+    }
+
+    #[cfg(test)]
+    pub fn set_running(&mut self, running: bool) {
+        self.running = running;
+    }
+
+    #[cfg(test)]
+    pub fn is_running_mock(&self) -> bool {
+        self.running
     }
 }
 
 #[async_trait]
 impl ChromeManager for MockChromeManager {
     async fn ensure_instance(&mut self) -> anyhow::Result<()> {
-        // Mock: do nothing
+        self.running = true;
         Ok(())
     }
 
     async fn stop_instance(&mut self) -> anyhow::Result<()> {
-        // Mock: do nothing
+        self.running = false;
+        self.seed_report = None;
         Ok(())
     }
 
@@ -92,16 +116,24 @@ impl ChromeManager for MockChromeManager {
         self.port
     }
 
-    fn features(&self) -> &[ChromeFeature] {
-        &self.features
-    }
-
     fn set_proxy(&mut self, _proxy: Option<String>) {
         // Mock: do nothing
     }
 
     fn set_features(&mut self, features: Vec<ChromeFeature>) {
         self.features = features;
+    }
+
+    fn features(&self) -> &[ChromeFeature] {
+        &self.features
+    }
+
+    async fn is_running(&self) -> bool {
+        self.running
+    }
+
+    fn set_seed_profile(&mut self, seed: Option<SeedReport>) {
+        self.seed_report = seed;
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -117,7 +149,10 @@ mod tests {
     #[tokio::test]
     async fn given_mock_manager_when_client_requested_then_connects_to_its_port() {
         let port = spawn_mock_chrome_server().await;
-        let manager = MockChromeManager::new(port);
+        let mut manager = MockChromeManager::new(port);
+        assert!(!manager.is_running_mock());
+        manager.set_running(true);
+        assert!(manager.is_running_mock());
 
         let client = manager
             .client()

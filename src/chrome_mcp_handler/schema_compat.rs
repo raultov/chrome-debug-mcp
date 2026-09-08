@@ -2,14 +2,33 @@
 use rust_mcp_sdk::schema::Tool;
 use serde_json::{Map, Value};
 
-/// Returns `tool` with every property schema normalized.
-pub(crate) fn normalize_tool(mut tool: Tool) -> Tool {
+/// Returns `tool` with every property schema normalized and cookie import properties filtered if disabled.
+pub(crate) fn normalize_tool_with_options(mut tool: Tool, allow_cookie_import: bool) -> Tool {
+    if !allow_cookie_import {
+        filter_cookie_import(&mut tool);
+    }
     if let Some(properties) = tool.input_schema.properties.as_mut() {
         for property in properties.values_mut() {
             normalize_object(property);
         }
     }
     tool
+}
+
+fn filter_cookie_import(tool: &mut Tool) {
+    if let Some(properties) = tool.input_schema.properties.as_mut() {
+        properties.remove("copy_cookies");
+        properties.remove("source_profile");
+        properties.remove("confirm_restart");
+    }
+    tool.input_schema
+        .required
+        .retain(|r| r != "copy_cookies" && r != "source_profile" && r != "confirm_restart");
+    if let Some(desc) = tool.description.as_mut()
+        && let Some(idx) = desc.find(" Note: copy_cookies")
+    {
+        desc.truncate(idx);
+    }
 }
 
 fn normalize_value(value: &mut Value) {
@@ -115,6 +134,12 @@ mod tests {
             .clone();
         normalize_object(&mut map);
         Value::Object(map)
+    }
+
+    #[test]
+    fn test_normalize_tool_wrapper() {
+        let tool = crate::chrome_mcp_handler::cdp_domains::page::navigate::NavigateTool::tool();
+        let _ = normalize_tool_with_options(tool, false);
     }
 
     #[test]

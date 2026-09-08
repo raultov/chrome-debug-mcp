@@ -62,6 +62,7 @@ pub(crate) struct LaunchParams {
     pub(crate) secondary: bool,
     proxy: Option<String>,
     features: Vec<ChromeFeature>,
+    seed_profile: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,7 +89,12 @@ impl LaunchParams {
             secondary: false,
             proxy: None,
             features: Vec::new(),
+            seed_profile: None,
         }
+    }
+
+    pub(crate) fn set_seed_profile(&mut self, seed_profile: Option<std::path::PathBuf>) {
+        self.seed_profile = seed_profile;
     }
 
     pub(crate) fn set_features(&mut self, features: Vec<ChromeFeature>) {
@@ -115,7 +121,9 @@ impl LaunchParams {
         } else {
             LaunchMode::AttachOnly
         };
-        let profile = if self.user_profile {
+        let profile = if let Some(dir) = &self.seed_profile {
+            ProfileMode::Persistent(dir.clone())
+        } else if self.user_profile {
             ProfileMode::UserDefault
         } else {
             // Fresh profile per launch: no cookies, storage, or session state
@@ -165,6 +173,15 @@ impl LaunchParams {
             .startup_timeout(std::time::Duration::from_secs(10));
         if let Some(proxy) = &self.proxy {
             builder = builder.proxy(proxy.clone());
+        }
+        // A seeded profile only works if Chrome can decrypt the imported
+        // cookies, which requires access to the desktop secret store. When the
+        // MCP server runs with a sanitized environment the needed session
+        // variables are missing, so they are derived and injected here.
+        if self.seed_profile.is_some() {
+            for (key, value) in super::cookie_seed::desktop_session_env() {
+                builder = builder.env_var(key, value);
+            }
         }
         builder.build()
     }
@@ -227,6 +244,14 @@ mod tests {
                 "host {host} should map to AttachOnly"
             );
         }
+    }
+
+    #[test]
+    fn given_seed_profile_when_planning_then_profile_mode_is_persistent() {
+        let mut params = default_params();
+        let seed_dir = std::path::PathBuf::from("/tmp/seed");
+        params.set_seed_profile(Some(seed_dir.clone()));
+        assert_eq!(params.plan().profile, ProfileMode::Persistent(seed_dir));
     }
 
     #[test]
