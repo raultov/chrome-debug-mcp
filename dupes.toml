@@ -1,0 +1,16 @@
+# Duplication thresholds for chrome-control-mcp (cargo-dupes 0.2.1).
+
+# --- Analysis scope ---
+min_lines = 10
+min_nodes = 10
+similarity_threshold = 0.8
+
+# --- Exclusions ---
+exclude_tests = true
+exclude = ["tests/", "benches/", "tests.rs"]
+
+# --- CI thresholds ---
+max_exact_duplicates = 2
+max_near_duplicates = 2
+max_exact_percent = 3.0
+max_near_percent = 3.0

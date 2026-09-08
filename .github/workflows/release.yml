@@ -49,14 +49,31 @@ on:
 jobs:
   # Run cargo tests before planning the release
   test:
-    name: Run Cargo Tests
+    name: Run Cargo Tests & Quality Gates
     runs-on: "ubuntu-latest"
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Run tests
-        run: cargo test
+        run: cargo test --all-targets --all-features
+      - name: Cache cargo-dupes
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-dupes
+          key: ${{ runner.os }}-cargo-dupes-0.2.1
+      - name: Install cargo-dupes
+        run: test -x ~/.cargo/bin/cargo-dupes || cargo install cargo-dupes --version 0.2.1 --locked
+      - name: Duplication Check
+        run: cargo dupes check
+      - name: Stale duplication suppressions (informational)
+        run: cargo dupes cleanup --dry-run
 
   # Validate Dockerfile before proceeding with the release
   validate-docker:

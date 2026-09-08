@@ -80,8 +80,7 @@ mod tests {
         let mut handler = ChromeMcpHandler::new_test();
         Arc::get_mut(&mut handler.default_session)
             .unwrap()
-            .chrome_manager =
-            std::sync::Arc::new(tokio::sync::Mutex::new(MockChromeManager::new(port)));
+            .chrome_manager = Arc::new(tokio::sync::Mutex::new(MockChromeManager::new(port)));
 
         let params = CallToolRequestParams {
             name: "get_performance_metrics".to_string(),
