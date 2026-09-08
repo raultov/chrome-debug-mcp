@@ -24,6 +24,14 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * **Isolated Profiles (Default)**: Every time the MCP server launches Chrome, it creates a **fresh, temporary user profile** in your system's temporary directory. This profile is completely independent of your main browser profile, and it is **removed when the browser stops** — cookies, history, saved passwords, or session data from one session never bleed into the next.
 * **Incognito-like Experience**: No cookies, history, saved passwords, or session data from your personal accounts are shared with the managed instance by default.
 * **Identity Protection**: Even if an LLM has full control over the browser, it cannot access your logged-in sessions (e.g., Google, GitHub, banking) or impersonate you unless explicitly authorized.
+* **Cookie Import (`--allow-cookie-import`)**: When started with the `--allow-cookie-import` flag, the server allows tools (`navigate`, `open_instance`, `restart_chrome`) to accept `copy_cookies: true` to seed the isolated ephemeral profile with your real Chrome session cookies.
+  * **Opt-in & Human Consent**: Off by default. The LLM must explicitly ask the user for confirmation before setting `copy_cookies: true`.
+  * **Cross-Platform Compatibility**:
+    * **Linux**: Supported (AES-128-CBC `v11` decrypted via desktop keyring). Imports `os_crypt.selected_backend` to prevent silent decryption failures.
+    * **macOS**: Supported (Keychain `v10` decrypted via Chrome binary ACL).
+    * **Windows**: Supported (`v10`/`v20` via DPAPI/App-Bound Encryption in `os_crypt`).
+  * **Destructive Relaunch Guard**: If `navigate` is called with `copy_cookies: true` on an already-running instance, it returns an error detailing all open tabs and requires `confirm_restart: true` before restarting the instance with the seeded cookies.
+  * **Security**: Password databases (`Login Data`) are **never copied**.
 * **User Profile Mode**: Use the `--user-profile` flag to launch Chrome using your **existing system profile**. This is useful when you want the LLM to work within your active sessions (cookies, saved logins, etc.) without having to re-authenticate on every site. **Use with caution as this provides the LLM access to your personal browser data.**
   * ⚠️ **Note on `--user-profile`**: Due to Chrome's singleton architecture, if your browser is already open, it will delegate the request and **fail to open the debugging port**. You must either **close all existing Chrome instances** before starting the MCP, or start your browser manually with the `--remote-debugging-port=9222` flag.
 
@@ -251,6 +259,18 @@ If you wish to compile from source:
 git clone https://github.com/raultov/chrome-debug-mcp
 cd chrome-debug-mcp
 cargo build --release
+```
+
+### Development & Code Quality
+
+```bash
+make check                                  # Run all local quality gates (fmt, clippy, test, dupes)
+
+# Or run gates individually:
+cargo clippy --all-targets -- -D warnings  # Must pass
+cargo fmt -- --check                        # Must pass
+cargo test --all-targets                    # Run unit tests
+cargo dupes check                           # Code duplication check
 ```
 
 The resulting binary will be located in `target/release/chrome-debug-mcp`. This project utilizes `cargo-dist` to handle cross-platform native distribution seamlessly via GitHub Actions.
