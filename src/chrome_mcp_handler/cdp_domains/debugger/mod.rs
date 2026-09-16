@@ -55,7 +55,7 @@ pub(crate) async fn process_debugger_event(event: &WsResponse, state: &Arc<Mutex
 pub(crate) fn start_debugger_listener(
     target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<DebuggerState>>,
-) {
+) -> tokio::task::JoinHandle<()> {
     crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener(
         target,
         "Debugger",
@@ -65,21 +65,14 @@ pub(crate) fn start_debugger_listener(
                 process_debugger_event(&event, &state).await;
             }
         },
-    );
+    )
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::chrome_mcp_handler::cdp_domains::tests::make_event;
     use serde_json::json;
-
-    fn make_event(method: &str, params: serde_json::Value) -> WsResponse {
-        WsResponse {
-            method: Some(method.to_string()),
-            params: Some(params),
-            ..Default::default()
-        }
-    }
 
     #[tokio::test]
     async fn test_script_parsed_inserts_script_info() {

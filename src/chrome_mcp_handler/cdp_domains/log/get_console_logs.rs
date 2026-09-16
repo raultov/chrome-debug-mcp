@@ -33,10 +33,10 @@ impl GetConsoleLogsTool {
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
 
-        let mut logs = {
+        let mut logs: Vec<_> = {
             let log_state = session.log_state(args.tab_id.clone())?;
             let mut st = log_state.lock().await;
-            let current_logs = st.messages.clone();
+            let current_logs = st.messages.iter().cloned().collect();
             if args.clear.unwrap_or(false) {
                 st.messages.clear();
             }

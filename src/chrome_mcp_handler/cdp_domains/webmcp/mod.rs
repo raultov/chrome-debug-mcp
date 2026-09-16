@@ -138,7 +138,7 @@ pub(crate) async fn process_webmcp_event(event: &WsResponse, state: &Arc<Mutex<W
 pub(crate) fn start_webmcp_listener(
     target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<WebmcpState>>,
-) {
+) -> tokio::task::JoinHandle<()> {
     crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener(
         target,
         "WebMCP",
@@ -148,7 +148,7 @@ pub(crate) fn start_webmcp_listener(
                 process_webmcp_event(&event, &state).await;
             }
         },
-    );
+    )
 }
 
 #[cfg(test)]

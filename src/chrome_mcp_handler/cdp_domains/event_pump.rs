@@ -27,19 +27,53 @@ where
     }
 }
 
+/// Aborts its listener tasks when dropped, so closing a tab or reconnecting the
+/// client leaves no orphan event pumps holding on to domain state.
+///
+/// This is needed because `EventFilter` reads from the broadcast channel of the
+/// shared browser connection: that sender outlives any individual tab, so the
+/// stream never ends on its own and the task would stay alive forever.
+#[derive(Default, Debug)]
+pub(crate) struct ListenerHandles(Vec<tokio::task::JoinHandle<()>>);
+
+impl ListenerHandles {
+    pub(crate) fn push(&mut self, handle: tokio::task::JoinHandle<()>) {
+        self.0.push(handle);
+    }
+
+    pub(crate) fn absorb(&mut self, mut other: ListenerHandles) {
+        let handles = std::mem::take(&mut other.0);
+        self.0.extend(handles);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl Drop for ListenerHandles {
+    fn drop(&mut self) {
+        for handle in &self.0 {
+            handle.abort();
+        }
+    }
+}
+
 /// Spawns a background task that pumps CDP events for a given domain.
 pub(crate) fn spawn_domain_listener<F, Fut>(
     target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     domain: &'static str,
     process: F,
-) where
+) -> tokio::task::JoinHandle<()>
+where
     F: Fn(WsResponse) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
     let events = target.on_domain(domain);
     tokio::spawn(async move {
         pump_events(events, domain, process).await;
-    });
+    })
 }
 
 #[cfg(test)]
@@ -126,5 +160,32 @@ mod tests {
     async fn given_empty_stream_when_pumping_then_returns_immediately() {
         let seen = pump_and_collect(vec![]).await;
         assert!(seen.is_empty());
+    }
+
+    #[tokio::test]
+    async fn given_listener_handles_when_dropped_then_aborts_tasks() {
+        let handle = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        });
+        let mut handles = ListenerHandles::default();
+        handles.push(handle);
+        assert_eq!(handles.len(), 1);
+
+        drop(handles);
+        tokio::task::yield_now().await;
+        // Task must be aborted
+    }
+
+    #[tokio::test]
+    async fn given_listener_handles_when_absorbed_then_transfers_without_aborting() {
+        let handle = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        });
+        let mut h1 = ListenerHandles::default();
+        h1.push(handle);
+
+        let mut h2 = ListenerHandles::default();
+        h2.absorb(h1);
+        assert_eq!(h2.len(), 1);
     }
 }

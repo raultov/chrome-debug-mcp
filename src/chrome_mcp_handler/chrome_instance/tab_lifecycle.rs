@@ -7,7 +7,7 @@ use tokio_stream::StreamExt;
 pub(crate) fn start_tab_lifecycle_listener(
     browser_client: BrowserClient,
     tabs: Arc<RwLock<TabRegistry>>,
-) {
+) -> tokio::task::JoinHandle<()> {
     let mut target_events = browser_client.client().on_domain("Target");
     let bc = browser_client.clone();
     let tabs_clone = tabs.clone();
@@ -26,7 +26,7 @@ pub(crate) fn start_tab_lifecycle_listener(
                 }
             }
         }
-    });
+    })
 }
 
 async fn process_target_event(
@@ -67,22 +67,24 @@ async fn process_target_event(
                     if let Ok(tab) = browser_client.attach(target_id).await {
                         cdp_domains::enable_tab_domains(&tab).await;
 
-                        let states = {
+                        let registered = {
                             let mut registry = tabs.write().unwrap();
                             if let Ok(tab_id) =
                                 registry.register_tab(tab.clone(), None, url.to_string())
                             {
-                                registry
+                                let states = registry
                                     .tabs
                                     .get(&tab_id)
-                                    .map(|entry| entry.domain_states())
+                                    .map(|entry| entry.domain_states());
+                                states.map(|st| (tab_id, st))
                             } else {
                                 None
                             }
                         };
 
-                        if let Some(states) = states {
-                            cdp_domains::start_tab_listeners(&tab, states);
+                        if let Some((tab_id, states)) = registered {
+                            let handles = cdp_domains::start_tab_listeners(&tab, states);
+                            tabs.write().unwrap().attach_listeners(&tab_id, handles);
                         }
                     }
                 }

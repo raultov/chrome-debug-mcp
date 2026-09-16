@@ -82,7 +82,12 @@ impl OpenTabTool {
         };
 
         if let Some(states) = states {
-            cdp_domains::start_tab_listeners(&tab, states);
+            let handles = cdp_domains::start_tab_listeners(&tab, states);
+            session
+                .tabs
+                .write()
+                .unwrap()
+                .attach_listeners(&tab_id, handles);
         }
 
         Ok(CallToolResult::text_content(vec![

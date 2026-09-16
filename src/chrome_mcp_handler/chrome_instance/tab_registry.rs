@@ -1,3 +1,4 @@
+use crate::chrome_mcp_handler::cdp_domains::event_pump::ListenerHandles;
 use crate::chrome_mcp_handler::cdp_domains::log::LogState;
 use crate::chrome_mcp_handler::cdp_domains::tracing::TracingState;
 use crate::chrome_mcp_handler::cdp_domains::webmcp::WebmcpState;
@@ -28,6 +29,7 @@ pub(crate) struct TabEntry {
     pub(crate) tracing_state: Arc<Mutex<TracingState>>,
     pub(crate) custom_state: Arc<Mutex<CustomState>>,
     pub(crate) webmcp_state: Arc<Mutex<WebmcpState>>,
+    pub(crate) listeners: Option<ListenerHandles>,
 }
 
 impl TabEntry {
@@ -90,6 +92,7 @@ impl TabRegistry {
             tracing_state: Arc::new(Mutex::new(TracingState::default())),
             custom_state: Arc::new(Mutex::new(CustomState::default())),
             webmcp_state: Arc::new(Mutex::new(WebmcpState::default())),
+            listeners: None,
         };
 
         self.tabs.insert(tab_id.clone(), entry);
@@ -98,6 +101,12 @@ impl TabRegistry {
         }
 
         Ok(tab_id)
+    }
+
+    pub(crate) fn attach_listeners(&mut self, tab_id: &str, handles: ListenerHandles) {
+        if let Some(entry) = self.tabs.get_mut(tab_id) {
+            entry.listeners = Some(handles);
+        }
     }
 
     pub(crate) fn remove_tab(&mut self, tab_id: &str) -> Option<TabEntry> {

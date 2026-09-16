@@ -1,6 +1,8 @@
 pub mod get_console_logs;
 
+use crate::chrome_mcp_handler::MAX_CONSOLE_MESSAGES;
 use cdp_browser_lite::WsResponse;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -16,7 +18,16 @@ pub struct ConsoleMessage {
 
 #[derive(Default)]
 pub(crate) struct LogState {
-    pub messages: Vec<ConsoleMessage>,
+    pub messages: VecDeque<ConsoleMessage>,
+}
+
+impl LogState {
+    pub(crate) fn push_message(&mut self, msg: ConsoleMessage) {
+        self.messages.push_back(msg);
+        if self.messages.len() > MAX_CONSOLE_MESSAGES {
+            self.messages.pop_front();
+        }
+    }
 }
 
 pub(crate) async fn process_log_event(event: &WsResponse, state: &Arc<Mutex<LogState>>) {
@@ -58,7 +69,7 @@ pub(crate) async fn process_log_event(event: &WsResponse, state: &Arc<Mutex<LogS
             let line_number = entry.get("lineNumber").and_then(|v| v.as_i64());
 
             let mut st = state.lock().await;
-            st.messages.push(ConsoleMessage {
+            st.push_message(ConsoleMessage {
                 source,
                 level,
                 text,
@@ -105,7 +116,7 @@ pub(crate) async fn process_log_event(event: &WsResponse, state: &Arc<Mutex<LogS
         };
 
         let mut st = state.lock().await;
-        st.messages.push(ConsoleMessage {
+        st.push_message(ConsoleMessage {
             source: "console-api".to_string(),
             level: type_,
             text,
@@ -139,7 +150,7 @@ pub(crate) async fn process_log_event(event: &WsResponse, state: &Arc<Mutex<LogS
         }
 
         let mut st = state.lock().await;
-        st.messages.push(ConsoleMessage {
+        st.push_message(ConsoleMessage {
             source: "exception".to_string(),
             level: "error".to_string(),
             text: full_text,
@@ -153,12 +164,14 @@ pub(crate) async fn process_log_event(event: &WsResponse, state: &Arc<Mutex<LogS
 pub(crate) fn start_log_listener(
     target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<LogState>>,
-) {
-    let log_events = target.on_domain("Log");
+) -> crate::chrome_mcp_handler::cdp_domains::event_pump::ListenerHandles {
+    let mut handles =
+        crate::chrome_mcp_handler::cdp_domains::event_pump::ListenerHandles::default();
+
     let state_clone_log = state_clone.clone();
-    tokio::spawn(async move {
-        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
-            log_events,
+    handles.push(
+        crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener(
+            target,
             "Log",
             move |event| {
                 let state = state_clone_log.clone();
@@ -166,15 +179,13 @@ pub(crate) fn start_log_listener(
                     process_log_event(&event, &state).await;
                 }
             },
-        )
-        .await;
-    });
+        ),
+    );
 
-    let runtime_events = target.on_domain("Runtime");
     let state_clone_runtime = state_clone.clone();
-    tokio::spawn(async move {
-        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events(
-            runtime_events,
+    handles.push(
+        crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener(
+            target,
             "Runtime",
             move |event| {
                 let state = state_clone_runtime.clone();
@@ -182,7 +193,8 @@ pub(crate) fn start_log_listener(
                     process_log_event(&event, &state).await;
                 }
             },
-        )
-        .await;
-    });
+        ),
+    );
+
+    handles
 }

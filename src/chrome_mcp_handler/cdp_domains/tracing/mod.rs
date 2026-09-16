@@ -29,7 +29,7 @@ pub(crate) async fn process_tracing_event(event: &WsResponse, state: &Arc<Mutex<
 pub(crate) fn start_tracing_listener(
     target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<TracingState>>,
-) {
+) -> tokio::task::JoinHandle<()> {
     crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener(
         target,
         "Tracing",
@@ -39,5 +39,5 @@ pub(crate) fn start_tracing_listener(
                 process_tracing_event(&event, &state).await;
             }
         },
-    );
+    )
 }
