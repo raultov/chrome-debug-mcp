@@ -32,9 +32,23 @@ impl CloseTabTool {
             registry.remove_tab(&args.tab_id)
         };
 
-        let entry = entry_opt.ok_or_else(|| {
-            CallToolError::from_message(format!("Tab ID '{}' not found", args.tab_id))
-        })?;
+        let entry = match entry_opt {
+            Some(e) => e,
+            None => {
+                let registry = session.tabs.read().unwrap();
+                let available: Vec<_> = registry.tabs.keys().cloned().collect();
+                let avail_str = if available.is_empty() {
+                    "none (if Chrome was restarted, previous tab IDs are no longer valid)"
+                        .to_string()
+                } else {
+                    available.join(", ")
+                };
+                return Err(CallToolError::from_message(format!(
+                    "Tab ID '{}' not found. Available tabs: {}. Use 'list_tabs' to discover current tab IDs.",
+                    args.tab_id, avail_str
+                )));
+            }
+        };
 
         // 2. Instruct the browser client to close it
         let browser_client = session.browser_client().await?;

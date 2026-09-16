@@ -117,6 +117,10 @@ impl OpenInstanceTool {
             tabs: Arc::new(std::sync::RwLock::new(
                 crate::chrome_mcp_handler::chrome_instance::tab_registry::TabRegistry::new(16),
             )),
+            session_listeners: Arc::new(Mutex::new(
+                cdp_domains::event_pump::ListenerHandles::default(),
+            )),
+            browser_version: Arc::new(Mutex::new(None)),
         });
 
         // Trigger ensure_instance to resolve the port
@@ -152,6 +156,7 @@ impl OpenInstanceTool {
                 .map(|f| f.as_name().to_string())
                 .collect(),
             is_default: false,
+            browser_version: None,
         };
 
         handler

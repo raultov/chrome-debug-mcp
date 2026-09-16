@@ -57,9 +57,16 @@ impl CloseInstanceTool {
                 .into(),
             ]))
         } else {
+            let available: Vec<_> = handler
+                .registry
+                .list_descriptors()
+                .into_iter()
+                .map(|d| d.id)
+                .collect();
             Err(CallToolError::from_message(format!(
-                "Instance '{}' not found.",
-                args.instance_id
+                "Instance '{}' not found. Available instances: {}. Use 'list_instances' to discover instance IDs.",
+                args.instance_id,
+                available.join(", ")
             )))
         }
     }

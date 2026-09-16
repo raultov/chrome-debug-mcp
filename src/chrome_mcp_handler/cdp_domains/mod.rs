@@ -12,9 +12,17 @@ pub mod webmcp;
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use cdp_browser_lite::CdpClient;
+    use cdp_browser_lite::{CdpClient, WsResponse};
     use serde_json::json;
     use std::time::Duration;
+
+    pub(crate) fn make_event(method: &str, params: serde_json::Value) -> WsResponse {
+        WsResponse {
+            method: Some(method.to_string()),
+            params: Some(params),
+            ..Default::default()
+        }
+    }
 
     pub(crate) async fn spawn_mock_chrome_server() -> u16 {
         use cdp_browser_lite::test_support::mock_devtools::{MockDevTools, MockWsBehavior};
@@ -81,12 +89,18 @@ pub(crate) async fn enable_tab_domains(tab: &Tab) {
 }
 
 /// Starts every per-tab domain listener on the tab's CDP target.
-pub(crate) fn start_tab_listeners(tab: &Tab, states: TabDomainStates) {
+pub(crate) fn start_tab_listeners(
+    tab: &Tab,
+    states: TabDomainStates,
+) -> event_pump::ListenerHandles {
+    let mut handles = event_pump::ListenerHandles::default();
     let target = cdp_target::CdpTarget::Tab(tab.clone());
     let (dbg, net, log, trace, webmcp) = states;
-    debugger::start_debugger_listener(&target, dbg);
-    network::start_network_listener(&target, net);
-    log::start_log_listener(&target, log);
-    tracing::start_tracing_listener(&target, trace);
-    webmcp::start_webmcp_listener(&target, webmcp);
+    handles.push(debugger::start_debugger_listener(&target, dbg));
+    handles.push(network::start_network_listener(&target, net.clone()));
+    handles.push(page::start_page_listener(&target, net));
+    handles.absorb(log::start_log_listener(&target, log));
+    handles.push(tracing::start_tracing_listener(&target, trace));
+    handles.push(webmcp::start_webmcp_listener(&target, webmcp));
+    handles
 }

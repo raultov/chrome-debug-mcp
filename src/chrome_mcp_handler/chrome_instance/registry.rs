@@ -1,4 +1,4 @@
-use crate::chrome_mcp_handler::BrowserSession;
+use crate::chrome_mcp_handler::{BrowserSession, BrowserVersion};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,6 +15,8 @@ pub struct InstanceDescriptor {
     pub profile_dir: Option<PathBuf>,
     pub features: Vec<String>,
     pub is_default: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browser_version: Option<BrowserVersion>,
 }
 
 pub(crate) struct Registry {
@@ -89,7 +91,19 @@ impl Registry {
 
     pub fn list_descriptors(&self) -> Vec<InstanceDescriptor> {
         let descriptors = self.descriptors.read().unwrap();
-        descriptors.values().cloned().collect()
+        let sessions = self.sessions.read().unwrap();
+        descriptors
+            .values()
+            .cloned()
+            .map(|mut desc| {
+                if let Some(session) = sessions.get(&desc.id)
+                    && let Ok(guard) = session.browser_version.try_lock()
+                {
+                    desc.browser_version = guard.clone();
+                }
+                desc
+            })
+            .collect()
     }
 
     pub fn generate_id(&self) -> InstanceId {

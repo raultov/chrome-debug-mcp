@@ -7,7 +7,7 @@ use serde_json::json;
 
 #[macros::mcp_tool(
     name = "get_network_logs",
-    description = "Retrieves intercepted HTTP/REST requests and WebSocket frames from network activity cache with filtering. Side effects: when 'clear' is true the cached requests and WebSocket frames are emptied after being returned. Prerequisites: requires active Chrome tab with network monitoring enabled. Returns: JSON array of requests/WebSocket frames with optional full details ('include_details' defaults to true; set false for summary only). Rate limits: none. Use this to audit API calls, debug network issues, inspect WebSocket traffic. Alternatives: browser DevTools Network tab, HAR file export."
+    description = "Retrieves intercepted HTTP/REST requests and WebSocket frames from network activity cache with filtering. Side effects: when 'clear' is true the cached requests and WebSocket frames are emptied after being returned. Prerequisites: requires active Chrome tab with network monitoring enabled. Returns: JSON array of requests/WebSocket frames with optional full details ('include_details' defaults to true; set false for summary only). Parameters: 'current_navigation_only' limits results to current navigation only (defaults to false, retaining up to 3 navigations). Rate limits: none. Use this to audit API calls, debug network issues, inspect WebSocket traffic. Alternatives: browser DevTools Network tab, HAR file export."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct GetNetworkLogsTool {
@@ -38,6 +38,10 @@ pub struct GetNetworkLogsTool {
     /// Include full request/response details. Constraints: boolean. Interactions: when false, returns summary only (URL, method, status); when true, includes headers, bodies. Defaults to: true.
     #[serde(default)]
     pub include_details: Option<bool>,
+
+    /// Limit results to current navigation only. Constraints: boolean. Interactions: when false, includes up to 3 retained navigations. Defaults to: false.
+    #[serde(default)]
+    pub current_navigation_only: Option<bool>,
 }
 
 impl GetNetworkLogsTool {
@@ -64,16 +68,22 @@ impl GetNetworkLogsTool {
         let ws_content_filter = args.ws_content_filter.unwrap_or_default().to_lowercase();
         let include_details = args.include_details.unwrap_or(true);
 
-        let (mut requests, mut ws_frames) = {
+        let current_only = args.current_navigation_only.unwrap_or(false);
+
+        let (mut requests, mut ws_frames, current_ids) = {
             let network_state = session.network_state(args.tab_id.clone())?;
             let mut st = network_state.lock().await;
-            let reqs = st.requests.clone();
+            let reqs = if current_only {
+                st.iter_current()
+            } else {
+                st.iter_all()
+            };
+            let c_ids = st.current_ids();
             let ws = st.ws_frames.clone();
             if args.clear.unwrap_or(false) {
-                st.requests.clear();
-                st.ws_frames.clear();
+                st.clear_all();
             }
-            (reqs, ws)
+            (reqs, ws, c_ids)
         };
 
         if !want_rest {
@@ -90,7 +100,8 @@ impl GetNetworkLogsTool {
                 let target_opt = session.target(args.tab_id.clone()).await.ok();
                 if let Some(target) = target_opt {
                     for (req_id, req) in requests.iter_mut() {
-                        if req.response_status.is_some()
+                        if current_ids.contains(req_id)
+                            && req.response_status.is_some()
                             && req.response_body.is_none()
                             && let Ok(body_resp) = target
                                 .send_raw_command(
@@ -214,7 +225,7 @@ mod tests {
         let mut st = handler.default_session.network_state.lock().await;
 
         // Mock REST request
-        st.requests.insert(
+        st.insert_request(
             "req-1".to_string(),
             NetworkRequest {
                 url: "https://example.com/api/v1".to_string(),
@@ -229,7 +240,7 @@ mod tests {
             },
         );
 
-        st.requests.insert(
+        st.insert_request(
             "req-2".to_string(),
             NetworkRequest {
                 url: "https://google.com/search".to_string(),
@@ -245,20 +256,21 @@ mod tests {
         );
 
         // Mock WS frames
-        st.ws_frames.insert(
+        st.push_ws_frame(
             "ws-1".to_string(),
-            vec![
-                WebSocketFrame {
-                    url: "wss://socket.com/feed".to_string(),
-                    payload_data: "hello server".to_string(),
-                    is_sent: true,
-                },
-                WebSocketFrame {
-                    url: "wss://socket.com/feed".to_string(),
-                    payload_data: "welcome client".to_string(),
-                    is_sent: false,
-                },
-            ],
+            WebSocketFrame {
+                url: "wss://socket.com/feed".to_string(),
+                payload_data: "hello server".to_string(),
+                is_sent: true,
+            },
+        );
+        st.push_ws_frame(
+            "ws-1".to_string(),
+            WebSocketFrame {
+                url: "wss://socket.com/feed".to_string(),
+                payload_data: "welcome client".to_string(),
+                is_sent: false,
+            },
         );
     }
 

@@ -1,4 +1,4 @@
-use crate::chrome_mcp_handler::ChromeMcpHandler;
+use crate::chrome_mcp_handler::{ChromeMcpHandler, MIN_SUPPORTED_CHROME_MAJOR, parse_chrome_major};
 use rust_mcp_sdk::{
     macros,
     schema::{CallToolError, CallToolRequestParams, CallToolResult},
@@ -17,9 +17,40 @@ impl ListInstancesTool {
         handler: &ChromeMcpHandler,
     ) -> Result<CallToolResult, CallToolError> {
         let descriptors = handler.registry.list_descriptors();
+        let mut warnings = Vec::new();
+
+        for desc in &descriptors {
+            if let Some(product) = desc
+                .browser_version
+                .as_ref()
+                .and_then(|ver| ver.product.as_ref())
+            {
+                if let Some(major) = parse_chrome_major(product) {
+                    if major < MIN_SUPPORTED_CHROME_MAJOR {
+                        warnings.push(format!(
+                            "[Warning] Instance '{}' is running an outdated browser ({}, major {} < minimum supported {}). Some DevTools features may not work as expected.",
+                            desc.id, product, major, MIN_SUPPORTED_CHROME_MAJOR
+                        ));
+                    }
+                } else if !desc.features.is_empty() {
+                    warnings.push(format!(
+                        "[Note] Instance '{}' is running an unrecognized browser product ('{}'). Requested feature presets ({}) cannot be verified.",
+                        desc.id,
+                        product,
+                        desc.features.join(", ")
+                    ));
+                }
+            }
+        }
+
         let result_json = serde_json::to_string_pretty(&descriptors)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
 
-        Ok(CallToolResult::text_content(vec![result_json.into()]))
+        let mut content = vec![result_json.into()];
+        if !warnings.is_empty() {
+            content.push(warnings.join("\n\n").into());
+        }
+
+        Ok(CallToolResult::text_content(content))
     }
 }

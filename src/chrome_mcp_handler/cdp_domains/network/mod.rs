@@ -40,7 +40,7 @@ pub(crate) async fn process_network_event(event: &WsResponse, state: &Arc<Mutex<
                     .map(|s| s.to_string());
 
                 let mut st = state.lock().await;
-                st.requests.insert(
+                st.insert_request(
                     request_id.to_string(),
                     NetworkRequest {
                         url,
@@ -71,7 +71,7 @@ pub(crate) async fn process_network_event(event: &WsResponse, state: &Arc<Mutex<
                     let headers = res.get("headers").cloned();
 
                     let mut st = state.lock().await;
-                    if let Some(req) = st.requests.get_mut(request_id) {
+                    if let Some(req) = st.find_request_mut(request_id) {
                         req.response_status = status;
                         req.response_status_text = status_text;
                         req.response_headers = headers;
@@ -108,14 +108,14 @@ pub(crate) async fn process_network_event(event: &WsResponse, state: &Arc<Mutex<
                     .get(request_id)
                     .cloned()
                     .unwrap_or_default();
-                st.ws_frames
-                    .entry(request_id.to_string())
-                    .or_default()
-                    .push(WebSocketFrame {
+                st.push_ws_frame(
+                    request_id.to_string(),
+                    WebSocketFrame {
                         url,
                         payload_data,
                         is_sent: true,
-                    });
+                    },
+                );
             }
         }
         "Network.webSocketFrameReceived" => {
@@ -133,14 +133,14 @@ pub(crate) async fn process_network_event(event: &WsResponse, state: &Arc<Mutex<
                     .get(request_id)
                     .cloned()
                     .unwrap_or_default();
-                st.ws_frames
-                    .entry(request_id.to_string())
-                    .or_default()
-                    .push(WebSocketFrame {
+                st.push_ws_frame(
+                    request_id.to_string(),
+                    WebSocketFrame {
                         url,
                         payload_data,
                         is_sent: false,
-                    });
+                    },
+                );
             }
         }
         _ => {}
@@ -150,7 +150,7 @@ pub(crate) async fn process_network_event(event: &WsResponse, state: &Arc<Mutex<
 pub(crate) fn start_network_listener(
     target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<NetworkState>>,
-) {
+) -> tokio::task::JoinHandle<()> {
     crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener(
         target,
         "Network",
@@ -160,21 +160,14 @@ pub(crate) fn start_network_listener(
                 process_network_event(&event, &state).await;
             }
         },
-    );
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chrome_mcp_handler::cdp_domains::tests::make_event;
     use serde_json::json;
-
-    fn make_event(method: &str, params: serde_json::Value) -> WsResponse {
-        WsResponse {
-            method: Some(method.to_string()),
-            params: Some(params),
-            ..Default::default()
-        }
-    }
 
     #[tokio::test]
     async fn test_request_will_be_sent() {
@@ -195,7 +188,8 @@ mod tests {
         process_network_event(&event, &state).await;
 
         let st = state.lock().await;
-        let req = st.requests.get("req-1").unwrap();
+        let reqs = st.iter_all();
+        let req = reqs.get("req-1").unwrap();
         assert_eq!(req.url, "https://example.com/api");
         assert_eq!(req.method, "POST");
         assert_eq!(req.request_post_data.as_deref(), Some("{\"foo\": \"bar\"}"));
@@ -207,7 +201,7 @@ mod tests {
         // Pre-insert request
         {
             let mut st = state.lock().await;
-            st.requests.insert(
+            st.insert_request(
                 "req-1".to_string(),
                 NetworkRequest {
                     url: "https://example.com".into(),
@@ -238,8 +232,8 @@ mod tests {
 
         process_network_event(&event, &state).await;
 
-        let st = state.lock().await;
-        let req = st.requests.get("req-1").unwrap();
+        let mut st = state.lock().await;
+        let req = st.find_request_mut("req-1").unwrap();
         assert_eq!(req.response_status, Some(200));
         assert_eq!(req.response_status_text.as_deref(), Some("OK"));
         assert_eq!(req.resource_type.as_deref(), Some("XHR"));

@@ -74,11 +74,103 @@ pub struct WebSocketFrame {
     pub is_sent: bool,
 }
 
-#[derive(Default)]
-pub(crate) struct NetworkState {
+pub(crate) const MAX_REQUESTS_PER_NAVIGATION: usize = 1000;
+pub(crate) const MAX_NAVIGATIONS_RETAINED: usize = 3;
+pub(crate) const MAX_WS_FRAMES_PER_CONNECTION: usize = 500;
+pub(crate) const MAX_CONSOLE_MESSAGES: usize = 1000;
+
+#[derive(Default, Clone)]
+pub(crate) struct NavigationBucket {
     pub requests: std::collections::HashMap<String, NetworkRequest>,
+    pub order: std::collections::VecDeque<String>,
+}
+
+pub(crate) struct NetworkState {
+    pub navigations: std::collections::VecDeque<NavigationBucket>,
     pub ws_connections: std::collections::HashMap<String, String>,
-    pub ws_frames: std::collections::HashMap<String, Vec<WebSocketFrame>>,
+    pub ws_frames: std::collections::HashMap<String, std::collections::VecDeque<WebSocketFrame>>,
+}
+
+impl Default for NetworkState {
+    fn default() -> Self {
+        let mut navigations = std::collections::VecDeque::new();
+        navigations.push_back(NavigationBucket::default());
+        Self {
+            navigations,
+            ws_connections: std::collections::HashMap::new(),
+            ws_frames: std::collections::HashMap::new(),
+        }
+    }
+}
+
+impl NetworkState {
+    pub(crate) fn insert_request(&mut self, id: String, req: NetworkRequest) {
+        if self.navigations.is_empty() {
+            self.navigations.push_back(NavigationBucket::default());
+        }
+        if let Some(bucket) = self.navigations.front_mut() {
+            bucket.order.push_back(id.clone());
+            bucket.requests.insert(id, req);
+            if bucket.order.len() > MAX_REQUESTS_PER_NAVIGATION
+                && let Some(oldest_id) = bucket.order.pop_front()
+            {
+                bucket.requests.remove(&oldest_id);
+            }
+        }
+    }
+
+    pub(crate) fn find_request_mut(&mut self, id: &str) -> Option<&mut NetworkRequest> {
+        for bucket in &mut self.navigations {
+            if let Some(req) = bucket.requests.get_mut(id) {
+                return Some(req);
+            }
+        }
+        None
+    }
+
+    pub(crate) fn split_after_navigation(&mut self) {
+        self.navigations.push_front(NavigationBucket::default());
+        self.navigations.truncate(MAX_NAVIGATIONS_RETAINED);
+    }
+
+    pub(crate) fn push_ws_frame(&mut self, id: String, frame: WebSocketFrame) {
+        let frames = self.ws_frames.entry(id).or_default();
+        frames.push_back(frame);
+        if frames.len() > MAX_WS_FRAMES_PER_CONNECTION {
+            frames.pop_front();
+        }
+    }
+
+    pub(crate) fn iter_all(&self) -> std::collections::HashMap<String, NetworkRequest> {
+        let mut all = std::collections::HashMap::new();
+        for bucket in self.navigations.iter().rev() {
+            for (id, req) in &bucket.requests {
+                all.insert(id.clone(), req.clone());
+            }
+        }
+        all
+    }
+
+    pub(crate) fn iter_current(&self) -> std::collections::HashMap<String, NetworkRequest> {
+        self.navigations
+            .front()
+            .map(|b| b.requests.clone())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn current_ids(&self) -> std::collections::HashSet<String> {
+        self.navigations
+            .front()
+            .map(|b| b.requests.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn clear_all(&mut self) {
+        self.navigations.clear();
+        self.navigations.push_back(NavigationBucket::default());
+        self.ws_connections.clear();
+        self.ws_frames.clear();
+    }
 }
 
 #[derive(Clone, Debug, ::serde::Serialize, ::serde::Deserialize)]
@@ -92,6 +184,31 @@ pub struct CustomEvent {
 pub(crate) struct CustomState {
     pub events: std::collections::VecDeque<CustomEvent>,
     pub active_domains: std::collections::HashSet<String>,
+    pub handles: cdp_domains::event_pump::ListenerHandles,
+}
+
+pub(crate) const MIN_SUPPORTED_CHROME_MAJOR: u32 = 120;
+
+#[derive(Clone, Debug, Default, ::serde::Serialize, ::serde::Deserialize)]
+pub struct BrowserVersion {
+    pub product: Option<String>,
+    pub revision: Option<String>,
+    pub protocol_version: Option<String>,
+    pub js_version: Option<String>,
+}
+
+pub(crate) fn parse_chrome_major(product: &str) -> Option<u32> {
+    let prefix = if product.starts_with("HeadlessChrome/") {
+        "HeadlessChrome/"
+    } else if product.starts_with("Chrome/") {
+        "Chrome/"
+    } else {
+        return None;
+    };
+
+    let rest = &product[prefix.len()..];
+    let major_str = rest.split('.').next()?;
+    major_str.parse::<u32>().ok()
 }
 
 pub(crate) struct BrowserSession {
@@ -104,6 +221,8 @@ pub(crate) struct BrowserSession {
     pub(crate) webmcp_state: Arc<Mutex<cdp_domains::webmcp::WebmcpState>>,
     pub(crate) chrome_manager: Arc<Mutex<dyn chrome_instance::ChromeManager>>,
     pub(crate) tabs: Arc<std::sync::RwLock<chrome_instance::tab_registry::TabRegistry>>,
+    pub(crate) session_listeners: Arc<Mutex<cdp_domains::event_pump::ListenerHandles>>,
+    pub(crate) browser_version: Arc<Mutex<Option<BrowserVersion>>>,
 }
 
 impl BrowserSession {
@@ -111,6 +230,9 @@ impl BrowserSession {
     /// next tool call reconnects to a freshly launched Chrome instance.
     pub(crate) async fn reset_connection_state(&self) {
         *self.client.lock().await = None;
+        *self.session_listeners.lock().await = cdp_domains::event_pump::ListenerHandles::default();
+        *self.browser_version.lock().await = None;
+        cdp_domains::custom::clear_custom_listeners(&self.custom_state).await;
         self.tabs.write().unwrap().clear();
     }
 
@@ -159,6 +281,36 @@ impl BrowserSession {
                         .send_raw_command("Performance.enable", cdp_browser_lite::NoParams)
                         .await;
 
+                    if let Ok(ver_res) = client
+                        .send_raw_command("Browser.getVersion", cdp_browser_lite::NoParams)
+                        .await
+                        && let Some(res) = ver_res.result
+                    {
+                        let product = res
+                            .get("product")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                        let revision = res
+                            .get("revision")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                        let protocol_version = res
+                            .get("protocolVersion")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                        let js_version = res
+                            .get("jsVersion")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+
+                        *self.browser_version.lock().await = Some(BrowserVersion {
+                            product,
+                            revision,
+                            protocol_version,
+                            js_version,
+                        });
+                    }
+
                     let has_webmcp = {
                         let manager = self.chrome_manager.lock().await;
                         manager
@@ -185,26 +337,35 @@ impl BrowserSession {
 
                     let target = cdp_domains::cdp_target::CdpTarget::Client(client.clone());
 
-                    cdp_domains::debugger::start_debugger_listener(
+                    let mut handles = cdp_domains::event_pump::ListenerHandles::default();
+                    handles.push(cdp_domains::debugger::start_debugger_listener(
                         &target,
                         self.debugger_state.clone(),
-                    );
+                    ));
 
-                    cdp_domains::network::start_network_listener(
+                    handles.push(cdp_domains::network::start_network_listener(
                         &target,
                         self.network_state.clone(),
-                    );
+                    ));
 
-                    cdp_domains::log::start_log_listener(&target, self.log_state.clone());
-                    cdp_domains::tracing::start_tracing_listener(
+                    handles.push(cdp_domains::page::start_page_listener(
+                        &target,
+                        self.network_state.clone(),
+                    ));
+
+                    handles.absorb(cdp_domains::log::start_log_listener(
+                        &target,
+                        self.log_state.clone(),
+                    ));
+                    handles.push(cdp_domains::tracing::start_tracing_listener(
                         &target,
                         self.tracing_state.clone(),
-                    );
+                    ));
                     if has_webmcp {
-                        cdp_domains::webmcp::start_webmcp_listener(
+                        handles.push(cdp_domains::webmcp::start_webmcp_listener(
                             &target,
                             self.webmcp_state.clone(),
-                        );
+                        ));
                     }
 
                     let _ = client
@@ -216,11 +377,15 @@ impl BrowserSession {
                         let manager = self.chrome_manager.lock().await;
                         manager.browser_client().await
                     } {
-                        chrome_instance::tab_lifecycle::start_tab_lifecycle_listener(
-                            browser_client,
-                            self.tabs.clone(),
+                        handles.push(
+                            chrome_instance::tab_lifecycle::start_tab_lifecycle_listener(
+                                browser_client,
+                                self.tabs.clone(),
+                            ),
                         );
                     }
+
+                    *self.session_listeners.lock().await = handles;
 
                     *client_lock = Some(client);
                 }
@@ -265,9 +430,17 @@ impl BrowserSession {
         match lookup {
             Lookup::Found(target) => return Ok(target),
             Lookup::NotFound(id) => {
+                let registry = self.tabs.read().unwrap();
+                let available: Vec<_> = registry.tabs.keys().cloned().collect();
+                let avail_str = if available.is_empty() {
+                    "none (if Chrome was restarted, previous tab IDs are no longer valid)"
+                        .to_string()
+                } else {
+                    available.join(", ")
+                };
                 return Err(CallToolError::from_message(format!(
-                    "Tab with ID '{}' not found in this session",
-                    id
+                    "Tab with ID '{}' not found in this session. Available tabs: {}. Use 'list_tabs' to discover current tab IDs.",
+                    id, avail_str
                 )));
             }
             Lookup::FallbackToDefault => {}
@@ -299,9 +472,16 @@ impl BrowserSession {
             return if let Some(entry) = registry.tabs.get(&id) {
                 Ok(tab_extractor(entry))
             } else {
+                let available: Vec<_> = registry.tabs.keys().cloned().collect();
+                let avail_str = if available.is_empty() {
+                    "none (if Chrome was restarted, previous tab IDs are no longer valid)"
+                        .to_string()
+                } else {
+                    available.join(", ")
+                };
                 Err(CallToolError::from_message(format!(
-                    "Tab '{}' not found",
-                    id
+                    "Tab '{}' not found. Available tabs: {}. Use 'list_tabs' to discover current tab IDs.",
+                    id, avail_str
                 )))
             };
         }
@@ -423,6 +603,7 @@ impl ChromeMcpHandler {
                 profile_dir: None,
                 features: default_features,
                 is_default: true,
+                browser_version: None,
             };
             self.registry
                 .add_session(desc, self.default_session.clone())
@@ -434,9 +615,16 @@ impl ChromeMcpHandler {
                 })?;
             Ok(self.default_session.clone())
         } else {
+            let available: Vec<_> = self
+                .registry
+                .list_descriptors()
+                .into_iter()
+                .map(|d| d.id)
+                .collect();
             Err(CallToolError::from_message(format!(
-                "Instance id '{}' not found",
-                id
+                "Instance id '{}' not found. Available instances: {}. Use 'list_instances' to discover instance IDs.",
+                id,
+                available.join(", ")
             )))
         }
     }
@@ -476,6 +664,10 @@ impl ChromeMcpHandler {
             tabs: Arc::new(std::sync::RwLock::new(
                 chrome_instance::tab_registry::TabRegistry::new(16),
             )),
+            session_listeners: Arc::new(Mutex::new(
+                cdp_domains::event_pump::ListenerHandles::default(),
+            )),
+            browser_version: Arc::new(Mutex::new(None)),
         });
 
         let default_features = {
@@ -495,6 +687,7 @@ impl ChromeMcpHandler {
             profile_dir: None, // lazy
             features: default_features,
             is_default: true,
+            browser_version: None,
         };
         registry.register_descriptor(desc);
 
@@ -538,6 +731,10 @@ impl ChromeMcpHandler {
             tabs: Arc::new(std::sync::RwLock::new(
                 chrome_instance::tab_registry::TabRegistry::new(16),
             )),
+            session_listeners: Arc::new(Mutex::new(
+                cdp_domains::event_pump::ListenerHandles::default(),
+            )),
+            browser_version: Arc::new(Mutex::new(None)),
         });
 
         let desc = chrome_instance::registry::InstanceDescriptor {
@@ -548,6 +745,7 @@ impl ChromeMcpHandler {
             profile_dir: None,
             features: vec![],
             is_default: true,
+            browser_version: None,
         };
         registry.register_descriptor(desc);
 
@@ -980,5 +1178,15 @@ mod tests {
             err.to_string()
                 .contains("Unknown tool: non_existent_tool_123")
         );
+    }
+
+    #[test]
+    fn test_parse_chrome_major() {
+        assert_eq!(parse_chrome_major("Chrome/152.0.6367.60"), Some(152));
+        assert_eq!(parse_chrome_major("HeadlessChrome/151.0.1"), Some(151));
+        assert_eq!(parse_chrome_major("Chrome/120.0"), Some(120));
+        assert_eq!(parse_chrome_major("MockChrome/1.0"), None);
+        assert_eq!(parse_chrome_major("Firefox/110.0"), None);
+        assert_eq!(parse_chrome_major(""), None);
     }
 }
