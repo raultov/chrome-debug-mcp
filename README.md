@@ -21,6 +21,11 @@ Using [`cdp-browser-lite`](https://crates.io/crates/cdp-browser-lite) underneath
 This server natively implements a suite of tools categorized by CDP domains and native process management:
 
 **🛡️ Privacy & Security**
+* **Daemon Stability & Lifecycle (v1.5.0)**:
+  * **Bounded Per-Navigation Retention**: `NetworkState` automatically caps network requests at 1,000 requests per navigation and retains up to 3 top-level navigations rotated on `Page.frameNavigated`. WebSocket frames are capped at 500 per connection, and console logs at 1,000 entries.
+  * **Graceful Worker Teardown**: Event pump tasks are managed via RAII handles (`ListenerHandles`) and automatically aborted when tabs are closed or browser connections reset.
+  * **Version Matching & Warnings**: `list_instances` reports detected `browser_version` data via `Browser.getVersion` and appends warnings if Chrome major version is below `120`.
+  * **Actionable Validation**: ID lookup errors for tabs and instances list all active IDs and offer hints when a browser restart invalidates previous tab handles.
 * **Isolated Profiles (Default)**: Every time the MCP server launches Chrome, it creates a **fresh, temporary user profile** in your system's temporary directory. This profile is completely independent of your main browser profile, and it is **removed when the browser stops** — cookies, history, saved passwords, or session data from one session never bleed into the next.
 * **Incognito-like Experience**: No cookies, history, saved passwords, or session data from your personal accounts are shared with the managed instance by default.
 * **Identity Protection**: Even if an LLM has full control over the browser, it cannot access your logged-in sessions (e.g., Google, GitHub, banking) or impersonate you unless explicitly authorized.
