@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.0]
+### Features
+- Added `current_navigation_only` parameter to `get_network_logs` to optionally restrict network output to requests initiated in the current top-level navigation.
+- Actionable ID validation errors for `session`, `target`, `close_tab`, and `close_instance` tool calls, returning the list of active/registered IDs and explicit guidance if an instance was restarted.
+- Automatic `Browser.getVersion` detection on session start, exposing `browser_version` in `list_instances` and appending actionable warnings if Chrome major version is below `120`.
+
+### Fixes
+- **Graceful worker teardown:** Introduced `ListenerHandles` RAII guard that automatically aborts CDP domain event pump tasks when tabs are closed or browser sessions are reset, preventing background task leaks across tab and instance lifecycles.
+- **Bounded network and log retention:** `NetworkState` now partitions requests into bounded per-navigation buckets (max 1000 requests/navigation, retaining up to 3 navigations) rotated automatically on main frame `Page.frameNavigated` events. WebSocket frames are capped at 500 per connection, and console logs (`LogState`) at 1000 entries.
+- Replaced domain name string leaking in `ensure_domain_listener` with a thread-safe `DOMAIN_INTERNER`.
+
+### Known Tech Debt
+- Main frame document navigation requests (`requestWillBeSent`) arrive prior to `Page.frameNavigated` and remain in the previous navigation bucket. Since `get_network_logs` returns all retained navigations by default, observable output is unaffected.
+
 ## [1.4.1]
 ### Fixes
 - Switched `cdp-browser-lite` dependency to published `0.3.5` from crates.io, removing local path patch so downstream builds, CI, Docker, and `cargo publish` succeed cleanly.
