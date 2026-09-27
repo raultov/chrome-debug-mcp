@@ -194,6 +194,12 @@ cargo install --git https://github.com/raultov/chrome-debug-mcp
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/raultov/chrome-debug-mcp/releases/latest/download/chrome-debug-mcp-installer.sh | sh
 ```
 
+**Option D: Install via Homebrew (macOS & Linux)**
+```bash
+brew install raultov/tap/chrome-debug-mcp
+```
+The formula fetches the pre-compiled binary from GitHub Releases on every release — no Rust toolchain needed. Works on Apple Silicon/Intel macOS and on Linux through [Homebrew-on-Linux](https://docs.brew.sh/Homebrew-on-Linux).
+
 ### 2. Configure your MCP Client
 This server is fully tested and confirmed to work with **Claude Code**, **agy**, and **codex**. Configure your AI client to execute the server using any of the following modes.
 

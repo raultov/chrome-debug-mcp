@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Features
+- Homebrew distribution: the release pipeline (cargo-dist 0.32.0) now publishes a formula to the `raultov/homebrew-tap` repository on every stable release, enabling `brew install raultov/tap/chrome-debug-mcp` on macOS (Apple Silicon/Intel) and Linux (Homebrew-on-Linux). The formula fetches the pre-built binaries from GitHub Releases, so users need no Rust toolchain.
+
 ## [1.5.0]
 ### Features
 - Added `current_navigation_only` parameter to `get_network_logs` to optionally restrict network output to requests initiated in the current top-level navigation.
