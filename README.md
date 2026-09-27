@@ -402,7 +402,7 @@ When running automated browser sessions, you can launch separate Chrome processe
 #### B. Working with WebMCP
 If you navigate to a page that supports WebMCP (e.g., https://www.knot.kz/#/agent-tools):
 1. Tools registered by the web page can be retrieved using `webmcp_list_tools`.
-2. By default, `WEB_MCP` is disabled for safety. If the tools list is empty, call `restart_chrome` with `features: ["WEB_MCP"]` and then `reload`.
+2. By default, WebMCP is disabled for safety. Start `chrome-debug-mcp` with `--enable-webmcp` to expose WebMCP tools and enable Chrome's WebMCP feature switches (`--enable-features=WebMCPTesting,DevToolsWebMCPSupport`).
 3. Invoke page tools using `webmcp_invoke_tool`, providing input JSON arguments. If a consent dialog pauses execution on the web page, the tool will timeout after 30 seconds but keep the invocation pending. You can poll its result using `webmcp_get_invocation`.
 
 ---
