@@ -175,42 +175,104 @@ docker run -i --rm chrome-mcp --host host.docker.internal
 
 ---
 
-## 🚀 Quick Start
+## 📦 Installation
 
-The easiest way to install and run the MCP Server natively is via Rust's Cargo or by downloading the pre-compiled binaries. You **do not** need to start Chrome manually anymore, the MCP Server will automatically launch a visible instance of Chrome with the correct debugging flags.
+Every method installs the **same pre-compiled binaries** published on each [GitHub Release](https://github.com/raultov/chrome-debug-mcp/releases); a Rust toolchain is only needed for the Cargo and source routes. The npm packages are small wrappers whose `postinstall` fetches the pre-compiled binary for your platform from GitHub Releases — no compiling, no Rust toolchain.
 
-### 1. Installation
+Methods are grouped by platform and ordered by popularity.
 
-**Option A: Pre-compiled Binaries (Recommended)**
-Go to the [Releases](https://github.com/raultov/chrome-debug-mcp/releases) page and download the native executable for your platform (macOS, Windows, Linux). We provide `.msi` installers for Windows and shell scripts for UNIX systems.
+### macOS
 
-**Option B: Install via Cargo**
+**1. Homebrew** — the natural option on macOS:
 ```bash
-cargo install --git https://github.com/raultov/chrome-debug-mcp
+brew install raultov/tap/chrome-debug-mcp
+```
+The formula fetches the pre-compiled binary (Apple Silicon & Intel) straight from GitHub Releases, and `brew upgrade` keeps you current on every release.
+
+**2. npm / npx** — the MCP-client convention (requires Node.js >= 14):
+```bash
+npm install -g @raultov/chrome-debug-mcp   # installs the `chrome-debug-mcp` command
+npx -y @raultov/chrome-debug-mcp           # ...or just run it once, nothing to install
 ```
 
-**Option C: Install via Shell Script (Unix)**
+**3. Shell installer** — one-liner that installs to `~/.cargo/bin`:
 ```bash
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/raultov/chrome-debug-mcp/releases/latest/download/chrome-debug-mcp-installer.sh | sh
 ```
 
-**Option D: Install via Homebrew (macOS & Linux)**
+**4. Cargo** — if you already have Rust:
+```bash
+cargo install chrome-debug-mcp     # compiles from crates.io
+cargo binstall chrome-debug-mcp    # with cargo-binstall: fetches the pre-compiled binary, no compile
+```
+
+**5. Manual download** — get the `aarch64-apple-darwin` or `x86_64-apple-darwin` `.tar.xz` archive from the [Releases](https://github.com/raultov/chrome-debug-mcp/releases) page.
+
+### Linux
+
+**1. npm / npx** — the MCP-client convention (requires Node.js >= 14):
+```bash
+npm install -g @raultov/chrome-debug-mcp   # installs the `chrome-debug-mcp` command
+npx -y @raultov/chrome-debug-mcp           # ...or just run it once, nothing to install
+```
+
+**2. Shell installer** — one-liner that installs to `~/.cargo/bin`:
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/raultov/chrome-debug-mcp/releases/latest/download/chrome-debug-mcp-installer.sh | sh
+```
+The Linux binaries require glibc >= 2.35 (Ubuntu 22.04+, Debian 12+, Fedora 36+).
+
+**3. Homebrew (Linuxbrew)** — if you already use [Homebrew-on-Linux](https://docs.brew.sh/Homebrew-on-Linux):
 ```bash
 brew install raultov/tap/chrome-debug-mcp
 ```
-The formula fetches the pre-compiled binary from GitHub Releases on every release — no Rust toolchain needed. Works on Apple Silicon/Intel macOS and on Linux through [Homebrew-on-Linux](https://docs.brew.sh/Homebrew-on-Linux).
 
-**Option E: Install via npm / npx (cross-platform)**
+**4. Cargo** — if you already have Rust:
 ```bash
-# run once without installing anything else (Node.js >= 14)
-npx -y @raultov/chrome-debug-mcp
-
-# or install globally — the command is still `chrome-debug-mcp`
-npm install -g @raultov/chrome-debug-mcp
+cargo install chrome-debug-mcp     # compiles from crates.io
+cargo binstall chrome-debug-mcp    # with cargo-binstall: fetches the pre-compiled binary, no compile
 ```
-The npm package is a small wrapper whose `postinstall` downloads the pre-compiled binary for your platform from GitHub Releases — no Rust toolchain, no Homebrew. MCP clients can launch it directly with `claude mcp add chrome-debug-mcp -- npx -y @raultov/chrome-debug-mcp`.
 
-### 2. Configure your MCP Client
+**5. Manual download** — get the `x86_64-unknown-linux-gnu` or `aarch64-unknown-linux-gnu` `.tar.xz` archive from the [Releases](https://github.com/raultov/chrome-debug-mcp/releases) page.
+
+### Windows
+
+**1. npm / npx** — the MCP-client convention (requires Node.js >= 14):
+```powershell
+npm install -g @raultov/chrome-debug-mcp   # installs the `chrome-debug-mcp` command
+npx -y @raultov/chrome-debug-mcp           # ...or just run it once, nothing to install
+```
+
+**2. MSI installer** — the native Windows experience: download `chrome-debug-mcp-x86_64-pc-windows-msvc.msi` from the [Releases](https://github.com/raultov/chrome-debug-mcp/releases) page and double-click it.
+
+**3. PowerShell installer** — one-liner:
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/raultov/chrome-debug-mcp/releases/latest/download/chrome-debug-mcp-installer.ps1 | iex"
+```
+
+**4. Cargo** — if you already have Rust:
+```powershell
+cargo install chrome-debug-mcp     # compiles from crates.io
+cargo binstall chrome-debug-mcp    # with cargo-binstall: fetches the pre-compiled binary, no compile
+```
+
+**5. Manual download** — get the `x86_64-pc-windows-msvc` `.zip` archive from the [Releases](https://github.com/raultov/chrome-debug-mcp/releases) page.
+
+### Docker & Cloud
+
+For containerized isolation, host-hybrid mode, and the zero-install Glama cloud deployment, see the **Docker & Headless Usage** section above.
+
+### From Source
+
+See **Compilation (From Source)** below.
+
+---
+
+## 🚀 Quick Start
+
+Pick any installation method above, then point your MCP client at the `chrome-debug-mcp` command. You **do not** need to start Chrome manually anymore, the MCP Server will automatically launch a visible instance of Chrome with the correct debugging flags.
+
+### 1. Configure your MCP Client
 This server is fully tested and confirmed to work with **Claude Code**, **agy**, and **codex**. Configure your AI client to execute the server using any of the following modes.
 
 #### **Universal Configuration (JSON)**
@@ -249,12 +311,14 @@ Most MCP clients (like Claude Code or any JSON-based config) use this structure.
 To add and activate the server in Claude Code:
 ```bash
 claude mcp add chrome-debug-mcp chrome-debug-mcp
+# ...or without installing anything first (Node.js >= 14):
+claude mcp add chrome-debug-mcp -- npx -y @raultov/chrome-debug-mcp
 ```
 
-### 3. Usage
+### 2. Usage
 Once connected, the AI agent will automatically handle starting Chrome when the first command is executed. The browser will remain visible so you can visually track the debugging process.
 
-### 4. Agent Workflows & Multi-Instance Guidance
+### 3. Agent Workflows & Multi-Instance Guidance
 
 LLMs can operate this server using a few optimized patterns:
 

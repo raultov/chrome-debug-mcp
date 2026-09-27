@@ -5,6 +5,9 @@
 - Homebrew distribution: the release pipeline (cargo-dist 0.32.0) now publishes a formula to the `raultov/homebrew-tap` repository on every stable release, enabling `brew install raultov/tap/chrome-debug-mcp` on macOS (Apple Silicon/Intel) and Linux (Homebrew-on-Linux). The formula fetches the pre-built binaries from GitHub Releases, so users need no Rust toolchain.
 - npm/npx distribution: the release pipeline now also publishes the installer package to npm as `@raultov/chrome-debug-mcp` (the unscoped name is taken by a third party), enabling `npx -y @raultov/chrome-debug-mcp`, `npm install -g @raultov/chrome-debug-mcp`, and the canonical MCP-client pattern `claude mcp add chrome-debug-mcp -- npx -y @raultov/chrome-debug-mcp`. The package is a small shim whose `postinstall` fetches the pre-built binary from GitHub Releases — no Rust toolchain, no Homebrew.
 
+### Docs
+- README: reorganized installation instructions into a dedicated **Installation** section grouped by platform (macOS, Linux, Windows) with methods ordered by popularity — Homebrew, npm/npx, shell/MSI/PowerShell installers, Cargo (now `cargo install chrome-debug-mcp` from crates.io) and `cargo binstall`, and manual downloads — plus pointers to the Docker and from-source routes.
+
 ## [1.5.0]
 ### Features
 - Added `current_navigation_only` parameter to `get_network_logs` to optionally restrict network output to requests initiated in the current top-level navigation.
