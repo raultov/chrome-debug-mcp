@@ -131,50 +131,6 @@ Requires restarting Chrome with the `WEB_MCP` capability preset (see `restart_ch
 
 ---
 
-## ⚙️ Configuration
-
-By default, the MCP Server discovers the Chrome executable through `cdp-browser-lite`'s cross-platform search: `CHROME_PATH` first (absolute priority), then common binaries in your `PATH` (`google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`), then OS-specific locations (`/Applications/Google Chrome.app/...` on macOS, the `chrome.exe` install dir on Windows, `/usr/bin/google-chrome`, `/opt/google/chrome/chrome` and `/snap/bin/chromium` on Linux). This is a strict superset of the paths the server previously hardcoded.
-
-**Arguments:**
-* `--local`: Restricts navigation to local addresses only (`localhost`, `127.0.0.1`, `192.168.x.x`, or `*.local`). Highly recommended for security.
-* `--headless`: Runs Chrome in headless mode (no GUI). Essential for Docker or server environments.
-* `--user-profile`: Use the default system user profile (sessions, cookies, etc.) instead of a fresh one. This is useful for avoiding repeated logins during research sessions.
-* `--host`: Specifies the target host for the Chrome instance (default: `127.0.0.1`). Use `host.docker.internal` to connect to a host machine from a container.
-* `--port`: Specifies the remote debugging port (default: `9222`).
-* `--enable-automation`: Enables the "controlled by automated software" infobar.
-* `--max-instances`: Limits the maximum number of concurrent Chrome instances (default: 8). Ignored if `--user-profile` is set.
-
-**Environment Variables:**
-* `CHROME_PATH`: Explicitly define the path to the Chrome executable.
-
----
-
-## 🐳 Docker & Headless Usage (v1.0.0)
-
-`chrome-debug-mcp` is fully container-ready. This allows several powerful use cases for LLMs:
-
-### 1. Cloud Deployment (via Glama)
-The easiest way to use this server. Glama spawns a Docker container with Chrome pre-installed. The LLM gets immediate access to a browser in the cloud without any local setup.
-
-### 2. Isolated Local Use
-Run everything inside Docker to avoid installing Chrome or Rust on your host machine:
-```bash
-docker build -t chrome-mcp .
-docker run -i --rm chrome-mcp --headless
-```
-
-### 3. Hybrid Mode (Container controlling Host)
-The MCP server runs inside a secure Docker container but controls the Chrome instance on your actual desktop. This allows the LLM to assist you in your real browsing session:
-1. Start your local Chrome with: `--remote-debugging-port=9222`
-   * *Note: If you need proxy support in this mode, you must also start Chrome with the `--proxy-server="http://your-proxy:port"` flag.*
-2. Run the container:
-```bash
-# On macOS/Windows
-docker run -i --rm chrome-mcp --host host.docker.internal
-```
-
----
-
 ## 📦 Installation
 
 Every method installs the **same pre-compiled binaries** published on each [GitHub Release](https://github.com/raultov/chrome-debug-mcp/releases); a Rust toolchain is only needed for the Cargo and source routes. The npm packages are small wrappers whose `postinstall` fetches the pre-compiled binary for your platform from GitHub Releases — no compiling, no Rust toolchain.
@@ -260,11 +216,55 @@ cargo binstall chrome-debug-mcp    # with cargo-binstall: fetches the pre-compil
 
 ### Docker & Cloud
 
-For containerized isolation, host-hybrid mode, and the zero-install Glama cloud deployment, see the **Docker & Headless Usage** section above.
+For containerized isolation, host-hybrid mode, and the zero-install Glama cloud deployment, see the **Docker & Headless Usage** section below.
 
 ### From Source
 
 See **Compilation (From Source)** below.
+
+---
+
+## ⚙️ Configuration
+
+By default, the MCP Server discovers the Chrome executable through `cdp-browser-lite`'s cross-platform search: `CHROME_PATH` first (absolute priority), then common binaries in your `PATH` (`google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`), then OS-specific locations (`/Applications/Google Chrome.app/...` on macOS, the `chrome.exe` install dir on Windows, `/usr/bin/google-chrome`, `/opt/google/chrome/chrome` and `/snap/bin/chromium` on Linux). This is a strict superset of the paths the server previously hardcoded.
+
+**Arguments:**
+* `--local`: Restricts navigation to local addresses only (`localhost`, `127.0.0.1`, `192.168.x.x`, or `*.local`). Highly recommended for security.
+* `--headless`: Runs Chrome in headless mode (no GUI). Essential for Docker or server environments.
+* `--user-profile`: Use the default system user profile (sessions, cookies, etc.) instead of a fresh one. This is useful for avoiding repeated logins during research sessions.
+* `--host`: Specifies the target host for the Chrome instance (default: `127.0.0.1`). Use `host.docker.internal` to connect to a host machine from a container.
+* `--port`: Specifies the remote debugging port (default: `9222`).
+* `--enable-automation`: Enables the "controlled by automated software" infobar.
+* `--max-instances`: Limits the maximum number of concurrent Chrome instances (default: 8). Ignored if `--user-profile` is set.
+
+**Environment Variables:**
+* `CHROME_PATH`: Explicitly define the path to the Chrome executable.
+
+---
+
+## 🐳 Docker & Headless Usage (v1.0.0)
+
+`chrome-debug-mcp` is fully container-ready. This allows several powerful use cases for LLMs:
+
+### 1. Cloud Deployment (via Glama)
+The easiest way to use this server. Glama spawns a Docker container with Chrome pre-installed. The LLM gets immediate access to a browser in the cloud without any local setup.
+
+### 2. Isolated Local Use
+Run everything inside Docker to avoid installing Chrome or Rust on your host machine:
+```bash
+docker build -t chrome-mcp .
+docker run -i --rm chrome-mcp --headless
+```
+
+### 3. Hybrid Mode (Container controlling Host)
+The MCP server runs inside a secure Docker container but controls the Chrome instance on your actual desktop. This allows the LLM to assist you in your real browsing session:
+1. Start your local Chrome with: `--remote-debugging-port=9222`
+   * *Note: If you need proxy support in this mode, you must also start Chrome with the `--proxy-server="http://your-proxy:port"` flag.*
+2. Run the container:
+```bash
+# On macOS/Windows
+docker run -i --rm chrome-mcp --host host.docker.internal
+```
 
 ---
 
