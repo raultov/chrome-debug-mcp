@@ -116,7 +116,7 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * `remove_breakpoint`: Remove a previously set breakpoint.
 
 **🧩 WebMCP (page-exposed tools)**
-Requires restarting Chrome with the `WEB_MCP` capability preset (see `restart_chrome`).
+Requires launching the server with `--enable-webmcp` to expose tools (`webmcp_*`) and enable Chromium feature switches (`--enable-features=WebMCPTesting,DevToolsWebMCPSupport`).
 * `webmcp_list_tools`: Lists the tools the current page exposes to the browser (name, description, `inputSchema`, `frameId`).
 * `webmcp_invoke_tool`: Invokes a page tool by name. `input` is a **JSON object string** (e.g. `"{}"` or `"{\"product\":\"knot\"}"`), matching the tool's `inputSchema`. Blocks up to 30s waiting for the result.
 * `webmcp_get_invocation`: Returns the status (`Pending`/`Completed`/`Error`/`Canceled`) and result of an invocation by `invocationId` — non-blocking.
@@ -266,6 +266,7 @@ These flags configure the MCP server process when launched. Pass them on the com
 | `--enable-automation` | Shows the native "Chrome is being controlled by automated test software" infobar. | `off` | Flag present (`on`) or omitted (`off`) |
 | `--user-profile` | Uses your default system Chrome profile (cookies, saved logins) instead of a fresh, isolated temporary profile. | `off` | Flag present (`on`) or omitted (`off`) |
 | `--allow-cookie-import` | Exposes cookie-import parameters (`copy_cookies`, `source_profile`, `confirm_restart`) to tools (`navigate`, `open_instance`, `restart_chrome`). | `off` | Flag present (`on`) or omitted (`off`) |
+| `--enable-webmcp` | Enables WebMCP testing switches (`--enable-features=WebMCPTesting,DevToolsWebMCPSupport`) on Chrome instances and exposes WebMCP tools (`webmcp_*`). Alias: `--webmcp`. | `off` | Flag present (`on`) or omitted (`off`) |
 | `--proxy-server <URL>` | Configures proxy server for Chrome instances and exposes proxy tools (`enable_proxy_auth`). Alias: `--proxy`. | *(none)* | Valid proxy URL (e.g. `http://proxy.example.com:8080`) |
 | `--proxy-username <USER>` | Default username for proxy authentication. | *(none)* | String username |
 | `--proxy-password <PASS>` | Default password for proxy authentication. | *(none)* | String password |

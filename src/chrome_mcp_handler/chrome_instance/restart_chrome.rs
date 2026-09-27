@@ -65,7 +65,12 @@ impl RestartChromeTool {
         manager.set_proxy(proxy);
         manager.set_seed_profile(seed_report);
 
-        let features = tool.features.unwrap_or_else(|| manager.features().to_vec());
+        let default_features = if handler.enable_webmcp && manager.features().is_empty() {
+            vec![ChromeFeature::WebMcp]
+        } else {
+            manager.features().to_vec()
+        };
+        let features = tool.features.unwrap_or(default_features);
         let summary = describe_features(&features);
         manager.set_features(features.clone());
 

@@ -74,6 +74,8 @@ impl OpenInstanceTool {
         child_params.secondary = true;
         if let Some(features) = args.features {
             child_params.set_features(features);
+        } else if handler.enable_webmcp {
+            child_params.set_features(vec![ChromeFeature::WebMcp]);
         }
         let proxy = args.proxy.or_else(|| handler.proxy_server.clone());
         if let Some(p) = proxy {

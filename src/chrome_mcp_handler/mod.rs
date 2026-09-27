@@ -580,6 +580,7 @@ pub struct HandlerParams {
     pub proxy_server: Option<String>,
     pub proxy_username: Option<String>,
     pub proxy_password: Option<String>,
+    pub enable_webmcp: bool,
 }
 
 impl Default for HandlerParams {
@@ -595,6 +596,7 @@ impl Default for HandlerParams {
             proxy_server: None,
             proxy_username: None,
             proxy_password: None,
+            enable_webmcp: false,
         }
     }
 }
@@ -609,6 +611,7 @@ pub struct ChromeMcpHandler {
     pub(crate) proxy_server: Option<String>,
     pub(crate) proxy_username: Option<String>,
     pub(crate) proxy_password: Option<String>,
+    pub(crate) enable_webmcp: bool,
     pub(crate) is_test: bool,
 }
 
@@ -672,6 +675,9 @@ impl ChromeMcpHandler {
             options.headless,
             options.user_profile,
         );
+        if options.enable_webmcp {
+            params.set_features(vec![chrome_instance::launch::ChromeFeature::WebMcp]);
+        }
         if let Some(proxy) = &options.proxy_server {
             params.set_proxy(Some(proxy.clone()));
         }
@@ -729,6 +735,7 @@ impl ChromeMcpHandler {
             proxy_server: options.proxy_server,
             proxy_username: options.proxy_username,
             proxy_password: options.proxy_password,
+            enable_webmcp: options.enable_webmcp,
             is_test: false,
         }
     }
@@ -790,6 +797,7 @@ impl ChromeMcpHandler {
             proxy_server: None,
             proxy_username: None,
             proxy_password: None,
+            enable_webmcp: false,
             is_test: true,
         }
     }
@@ -883,14 +891,17 @@ impl ServerHandler for ChromeMcpHandler {
             ProfilePagePerformanceTool::tool(),
             SendCdpCommandTool::tool(),
             GetCustomEventsTool::tool(),
-            cdp_domains::webmcp::ListWebmcpToolsTool::tool(),
-            cdp_domains::webmcp::InvokeWebmcpToolTool::tool(),
-            cdp_domains::webmcp::GetWebmcpInvocationTool::tool(),
-            cdp_domains::webmcp::ListWebmcpInvocationsTool::tool(),
         ];
 
         if self.proxy_server.is_some() {
             tools.push(EnableProxyAuthTool::tool());
+        }
+
+        if self.enable_webmcp {
+            tools.push(cdp_domains::webmcp::ListWebmcpToolsTool::tool());
+            tools.push(cdp_domains::webmcp::InvokeWebmcpToolTool::tool());
+            tools.push(cdp_domains::webmcp::GetWebmcpInvocationTool::tool());
+            tools.push(cdp_domains::webmcp::ListWebmcpInvocationsTool::tool());
         }
 
         Ok(ListToolsResult {
@@ -976,12 +987,32 @@ impl ServerHandler for ChromeMcpHandler {
         } else if params.name == "get_custom_events" {
             GetCustomEventsTool::handle(params, self).await
         } else if params.name == "webmcp_list_tools" {
+            if !self.enable_webmcp {
+                return Err(CallToolError::from_message(
+                    "Tool 'webmcp_list_tools' is disabled. Start chrome-debug-mcp with --enable-webmcp to enable WebMCP support.",
+                ));
+            }
             cdp_domains::webmcp::ListWebmcpToolsTool::handle(params, self).await
         } else if params.name == "webmcp_invoke_tool" {
+            if !self.enable_webmcp {
+                return Err(CallToolError::from_message(
+                    "Tool 'webmcp_invoke_tool' is disabled. Start chrome-debug-mcp with --enable-webmcp to enable WebMCP support.",
+                ));
+            }
             cdp_domains::webmcp::InvokeWebmcpToolTool::handle(params, self).await
         } else if params.name == "webmcp_get_invocation" {
+            if !self.enable_webmcp {
+                return Err(CallToolError::from_message(
+                    "Tool 'webmcp_get_invocation' is disabled. Start chrome-debug-mcp with --enable-webmcp to enable WebMCP support.",
+                ));
+            }
             cdp_domains::webmcp::GetWebmcpInvocationTool::handle(params, self).await
         } else if params.name == "webmcp_list_invocations" {
+            if !self.enable_webmcp {
+                return Err(CallToolError::from_message(
+                    "Tool 'webmcp_list_invocations' is disabled. Start chrome-debug-mcp with --enable-webmcp to enable WebMCP support.",
+                ));
+            }
             cdp_domains::webmcp::ListWebmcpInvocationsTool::handle(params, self).await
         } else {
             Err(CallToolError::unknown_tool(params.name))
@@ -1133,8 +1164,10 @@ mod tests {
             proxy_server: Some("http://proxy.example.com:8080".into()),
             proxy_username: Some("user".into()),
             proxy_password: Some("pass".into()),
+            enable_webmcp: true,
         });
         assert!(handler.local_only);
+        assert!(handler.enable_webmcp);
         assert_eq!(
             handler.proxy_server,
             Some("http://proxy.example.com:8080".into())
@@ -1155,8 +1188,8 @@ mod tests {
         assert!(result.is_ok());
         let tools = result.unwrap().tools;
 
-        // Without proxy configured, 34 tools are listed (enable_proxy_auth is excluded)
-        assert_eq!(tools.len(), 34);
+        // Without proxy and webmcp, 30 tools are listed
+        assert_eq!(tools.len(), 30);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"scroll".to_string()));
         assert!(tool_names.contains(&"capture_screenshot".to_string()));
@@ -1170,6 +1203,7 @@ mod tests {
         assert!(tool_names.contains(&"get_performance_metrics".to_string()));
         assert!(tool_names.contains(&"profile_page_performance".to_string()));
         assert!(!tool_names.contains(&"enable_proxy_auth".to_string()));
+        assert!(!tool_names.contains(&"webmcp_list_tools".to_string()));
     }
 
     #[tokio::test]
@@ -1185,10 +1219,32 @@ mod tests {
         assert!(result.is_ok());
         let tools = result.unwrap().tools;
 
-        // With proxy configured, enable_proxy_auth is included (35 tools)
-        assert_eq!(tools.len(), 35);
+        // With proxy configured (and webmcp disabled), 31 tools are listed
+        assert_eq!(tools.len(), 31);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"enable_proxy_auth".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_handle_list_tools_request_with_webmcp() {
+        let mut handler = ChromeMcpHandler::new_test();
+        handler.enable_webmcp = true;
+        let mock_server = Arc::new(DummyMcpServer {});
+
+        let result = handler
+            .handle_list_tools_request(None, mock_server.clone())
+            .await;
+
+        assert!(result.is_ok());
+        let tools = result.unwrap().tools;
+
+        // With webmcp configured (30 + 4 = 34 tools)
+        assert_eq!(tools.len(), 34);
+        let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
+        assert!(tool_names.contains(&"webmcp_list_tools".to_string()));
+        assert!(tool_names.contains(&"webmcp_invoke_tool".to_string()));
+        assert!(tool_names.contains(&"webmcp_get_invocation".to_string()));
+        assert!(tool_names.contains(&"webmcp_list_invocations".to_string()));
     }
 
     /// Gemini rejects a function declaration whose `items` sits next to a

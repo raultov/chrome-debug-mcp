@@ -51,6 +51,10 @@ struct Args {
     /// Proxy authentication password
     #[arg(long)]
     proxy_password: Option<String>,
+
+    /// Enables WebMCP testing features in Chrome (--enable-features=WebMCPTesting,DevToolsWebMCPSupport) and exposes WebMCP tools.
+    #[arg(long, alias = "webmcp")]
+    enable_webmcp: bool,
 }
 
 #[tokio::main]
@@ -66,7 +70,8 @@ async fn main() -> SdkResult<()> {
         "- WebMCP (interaction with page-provided tools) is an opt-in feature. To enable it on the default instance, call `restart_chrome` with `features: [\"WEB_MCP\"]` and reload the target page. For new instances, pass `features: [\"WEB_MCP\"]` to `open_instance`.\n",
         "- If `webmcp_list_tools` returns an empty array, check the warning text in the output content. The 'WEB_MCP' preset might be disabled on that instance, or the page hasn't finished loading.\n",
         "- Cookie import: when the server is launched with `--allow-cookie-import`, tools (`navigate`, `open_instance`, `restart_chrome`) support `copy_cookies: true` to populate isolated instances with the user's real Chrome session. Always ask the user before copying their real cookies.\n",
-        "- Proxy support: when the server is launched with `--proxy-server <URL>`, Chrome instances route traffic through the proxy and proxy tools (`enable_proxy_auth`) are exposed."
+        "- Proxy support: when the server is launched with `--proxy-server <URL>`, Chrome instances route traffic through the proxy and proxy tools (`enable_proxy_auth`) are exposed.\n",
+        "- WebMCP: when the server is launched with `--enable-webmcp`, Chrome instances enable WebMCP testing features and WebMCP tools (`webmcp_list_tools`, `webmcp_invoke_tool`, `webmcp_get_invocation`, `webmcp_list_invocations`) are exposed."
     );
 
     let server_info = InitializeResult {
@@ -101,6 +106,7 @@ async fn main() -> SdkResult<()> {
         proxy_server: args.proxy_server,
         proxy_username: args.proxy_username,
         proxy_password: args.proxy_password,
+        enable_webmcp: args.enable_webmcp,
     };
     let handler = ChromeMcpHandler::new_with_params(handler_params);
     handler
@@ -139,6 +145,7 @@ mod tests {
         assert!(!args.headless);
         assert!(!args.user_profile);
         assert!(!args.allow_cookie_import);
+        assert!(!args.enable_webmcp);
         assert_eq!(args.proxy_server, None);
         assert_eq!(args.proxy_username, None);
         assert_eq!(args.proxy_password, None);
@@ -203,6 +210,15 @@ mod tests {
             args.proxy_server,
             Some("http://proxy.example.com:8080".to_string())
         );
+    }
+
+    #[test]
+    fn test_args_parsing_enable_webmcp() {
+        let args = Args::parse_from(["chrome-debug-mcp", "--enable-webmcp"]);
+        assert!(args.enable_webmcp);
+
+        let args_alias = Args::parse_from(["chrome-debug-mcp", "--webmcp"]);
+        assert!(args_alias.enable_webmcp);
     }
 
     #[test]
