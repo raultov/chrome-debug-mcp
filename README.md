@@ -288,19 +288,19 @@ These flags configure the MCP server process when launched. Pass them on the com
 
 When the MCP server spawns Chrome, it constructs switches based on its startup flags, dynamically allocated ports, and capability presets requested per instance (e.g. via `open_instance` or `restart_chrome`).
 
-#### A. Server-to-Chrome Flag Mapping
+#### A. Native Chromium Switches Applied
 
-| Server Input / State | Chrome Command Line Switch(es) Applied | Effect / Description |
+| Native Chrome / Chromium Switch | Triggered when `chrome-debug-mcp` is launched with... | Effect / Description |
 |---|---|---|
-| `--port <PORT>` | `--remote-debugging-port=<PORT>` | Binds V8 Inspector CDP WebSocket endpoint to the specified port. |
-| `--user-profile` omitted *(default)* | `--user-data-dir=<TMP_DIR>` | Creates an isolated, ephemeral profile directory in `/tmp` deleted automatically on shutdown. |
-| `--user-profile` passed | *(no `--user-data-dir` switch)* | Delegates to system default profile location (`~/.config/google-chrome`, Keychain/DPAPI). |
-| `--headless` passed | `--headless` | Runs browser without GUI. |
-| `--enable-automation` omitted *(default)* | `--disable-infobars` | Suppresses the "controlled by automated software" notification bar for stealthier interaction. |
-| `--enable-automation` passed | *(no `--disable-infobars` switch)* | Shows native automation infobar. |
-| `--proxy-server <URL>` passed | `--proxy-server="<PROXY_URL>"` | Routes instance network traffic through the specified HTTP/SOCKS proxy. |
-| `--enable-webmcp` passed | `--enable-features=WebMCPTesting,DevToolsWebMCPSupport` | Enables the WebMCP runtime testing API and DevTools CDP inspection switches in Chrome. |
-| Seed profile / Cookie import *(dynamic)* | `--user-data-dir=<SEEDED_TMP_DIR>` | Copies decrypted Chrome cookies into a fresh ephemeral profile copy. |
+| `--remote-debugging-port=<PORT>` | `--port <PORT>` | Binds V8 Inspector CDP WebSocket endpoint to the specified port. |
+| `--user-data-dir=<TMP_DIR>` | `--user-profile` omitted *(default)* | Creates an isolated, ephemeral profile directory in `/tmp` deleted automatically on shutdown. |
+| *(no `--user-data-dir` switch)* | `--user-profile` passed | Delegates to system default profile location (`~/.config/google-chrome`, Keychain/DPAPI). |
+| `--headless` | `--headless` passed | Runs browser without GUI. |
+| `--disable-infobars` | `--enable-automation` omitted *(default)* | Suppresses the "controlled by automated software" notification bar for stealthier interaction. |
+| *(no `--disable-infobars` switch)* | `--enable-automation` passed | Shows native automation infobar. |
+| `--proxy-server="<PROXY_URL>"` | `--proxy-server <URL>` passed | Routes instance network traffic through the specified HTTP/SOCKS proxy. |
+| `--enable-features=WebMCPTesting,DevToolsWebMCPSupport` | `--enable-webmcp` passed | Enables the WebMCP runtime testing API (`#enable-webmcp-testing`) and DevTools CDP inspection switches (`#devtools-webmcp-support`) in Chrome. |
+| `--user-data-dir=<SEEDED_TMP_DIR>` | Seed profile / Cookie import *(dynamic)* | Copies decrypted Chrome cookies into a fresh ephemeral profile copy. |
 
 #### B. Capability Presets (`features` parameter)
 
