@@ -18,7 +18,7 @@ use tokio::sync::Mutex;
 
 #[macros::mcp_tool(
     name = "open_instance",
-    description = "Opens a new independent Chrome instance. Side effects: launches a separate Chrome process with its own profile directory and remote-debugging port. Prerequisites: rejected when the server runs in --user-profile mode (Chrome's singleton profile lock). Returns: structured JSON with 'instance_id' (pass it as the 'instance_id' argument of other tools), 'host', 'port' and 'profile_dir'. Use this to isolate browsing sessions, cookies, proxies or WebMCP contexts from one another. Alternatives: 'open_tab' for additional tabs within an existing instance. Parameters: 'features' accepts a closed set - 'WEB_MCP' (enables the experimental WebMCP surface for sites that expose tools to the browser) or 'WEBGL_SOFTWARE' (forces SwiftShader software WebGL for GPU-less environments); 'headless' defaults to false (prefer false so the user can see the browser)."
+    description = "Opens a new independent Chrome instance. Side effects: launches a separate Chrome process with its own profile directory and remote-debugging port. Prerequisites: rejected when the server runs in --user-profile mode (Chrome's singleton profile lock). Returns: structured JSON with 'instance_id' (pass it as the 'instance_id' argument of other tools), 'host', 'port' and 'profile_dir'. Use this to isolate browsing sessions, cookies, proxies or WebMCP contexts from one another. Alternatives: 'open_tab' for additional tabs within an existing instance. Parameters: 'features' accepts a closed set - 'WEBGL_SOFTWARE' (forces SwiftShader software WebGL for GPU-less environments); 'headless' defaults to false (prefer false so the user can see the browser)."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct OpenInstanceTool {
@@ -28,7 +28,7 @@ pub struct OpenInstanceTool {
     pub headless: Option<bool>,
     /// Optional proxy server configuration.
     pub proxy: Option<String>,
-    /// Optional feature presets (e.g. WEB_MCP, WEBGL_SOFTWARE).
+    /// Optional feature presets (e.g. WEBGL_SOFTWARE).
     pub features: Option<Vec<ChromeFeature>>,
     /// Optional flag to copy cookies from the user's real Chrome installation into this instance's isolated profile. Requires server running with --allow-cookie-import.
     pub copy_cookies: Option<bool>,
@@ -72,10 +72,9 @@ impl OpenInstanceTool {
             false, // user_profile (must be false to allow multiple profile dirs)
         );
         child_params.secondary = true;
+        child_params.set_enable_webmcp(handler.enable_webmcp);
         if let Some(features) = args.features {
             child_params.set_features(features);
-        } else if handler.enable_webmcp {
-            child_params.set_features(vec![ChromeFeature::WebMcp]);
         }
         let proxy = args.proxy.or_else(|| handler.proxy_server.clone());
         if let Some(p) = proxy {
@@ -124,6 +123,7 @@ impl OpenInstanceTool {
                 cdp_domains::event_pump::ListenerHandles::default(),
             )),
             browser_version: Arc::new(Mutex::new(None)),
+            enable_webmcp: handler.enable_webmcp,
         });
 
         // Trigger ensure_instance to resolve the port

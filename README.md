@@ -66,7 +66,6 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * **Auto-Launch**: Automatically detects if Chrome is running on the specified port. If not, it spawns a new instance with the required flags.
 * `restart_chrome`: Restarts the managed Chrome instance.
 * **Capability Presets**: `restart_chrome` accepts an optional `features` array so a client can opt into extra browser capabilities per restart. It is a **closed set** — arbitrary Chrome flags are deliberately not accepted, to keep the tool from becoming a command line injection point:
-  * `WEB_MCP` — enables the experimental WebMCP surface (`--enable-features=WebMCPTesting,DevToolsWebMCPSupport`), for sites that expose tools to the browser.
   * `WEBGL_SOFTWARE` — forces SwiftShader software WebGL (`--use-gl=angle`, `--use-angle=swiftshader`, `--enable-unsafe-swiftshader`), for GPU-less environments such as containers.
 
   Presets apply to the instance started by that call; a later `restart_chrome` that omits `features` clears them, mirroring how `proxy_server` behaves.
@@ -308,7 +307,6 @@ Dynamic tools (`open_instance`, `restart_chrome`) accept a `features` array of c
 
 | Preset Name | Chrome Command Line Switches Applied | Use Case / Purpose |
 |---|---|---|
-| `"WEB_MCP"` | `--enable-features=WebMCPTesting,DevToolsWebMCPSupport` | Enables the experimental WebMCP page-exposed tools surface (API & DevTools inspection). |
 | `"WEBGL_SOFTWARE"` | `--use-gl=angle`<br>`--use-angle=swiftshader`<br>`--enable-unsafe-swiftshader` | Forces SwiftShader software rasterization for WebGL in GPU-less containers. |
 
 ---

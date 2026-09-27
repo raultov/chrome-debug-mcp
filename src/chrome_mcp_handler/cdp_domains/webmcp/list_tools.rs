@@ -44,13 +44,13 @@ impl ListWebmcpToolsTool {
         if all_tools.is_empty() {
             let warn_text = match st.availability {
                 WebmcpAvailability::NotRequested => {
-                    "\n\n[Warning] No tools registered. This instance was not launched with the 'WEB_MCP' preset. To enable WebMCP, please restart this instance with the 'WEB_MCP' feature active, or open a new instance requesting the 'WEB_MCP' feature."
+                    "\n\n[Warning] No tools registered. WebMCP testing features are not active. Make sure the server was started with --enable-webmcp."
                 }
                 WebmcpAvailability::Unsupported => {
-                    "\n\n[Warning] No tools registered. The 'WEB_MCP' feature was requested, but this Chrome instance does not support or expose the WebMCP CDP domain."
+                    "\n\n[Warning] No tools registered. WebMCP was enabled via --enable-webmcp, but this Chrome instance does not support or expose the WebMCP CDP domain."
                 }
                 WebmcpAvailability::Enabled => {
-                    "\n\n[Note] The 'WEB_MCP' preset is active, but the current web page has not registered any tools yet. Make sure you have navigated to a WebMCP-capable page (like https://www.knot.kz/#/agent-tools) and the page has finished loading (try reloading)."
+                    "\n\n[Note] WebMCP is active, but the current web page has not registered any tools yet. Make sure you have navigated to a WebMCP-capable page (like https://www.knot.kz/#/agent-tools) and the page has finished loading (try reloading)."
                 }
             };
             content_list.push(warn_text.to_string().into());

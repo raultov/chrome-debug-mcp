@@ -19,9 +19,6 @@ use rust_mcp_sdk::macros;
     macros::JsonSchema,
 )]
 pub enum ChromeFeature {
-    /// Experimental WebMCP surface, used by sites that expose tools to the browser.
-    #[serde(rename = "WEB_MCP")]
-    WebMcp,
     /// Software (SwiftShader) rasterization for WebGL, for GPU-less environments.
     #[serde(rename = "WEBGL_SOFTWARE")]
     WebglSoftware,
@@ -31,7 +28,6 @@ impl ChromeFeature {
     /// Stable client-facing name of this preset, matching the published schema.
     pub(crate) fn as_name(self) -> &'static str {
         match self {
-            Self::WebMcp => "WEB_MCP",
             Self::WebglSoftware => "WEBGL_SOFTWARE",
         }
     }
@@ -39,7 +35,6 @@ impl ChromeFeature {
     /// Chrome command line switches this preset expands to.
     pub(crate) fn switches(self) -> &'static [&'static str] {
         match self {
-            Self::WebMcp => &["--enable-features=WebMCPTesting,DevToolsWebMCPSupport"],
             Self::WebglSoftware => &[
                 "--use-gl=angle",
                 "--use-angle=swiftshader",
@@ -55,6 +50,7 @@ pub(crate) struct LaunchParams {
     port: u16,
     headless: bool,
     enable_automation: bool,
+    pub(crate) enable_webmcp: bool,
     pub(crate) user_profile: bool,
     pub(crate) secondary: bool,
     proxy: Option<String>,
@@ -83,11 +79,16 @@ impl LaunchParams {
             enable_automation,
             headless,
             user_profile,
+            enable_webmcp: false,
             secondary: false,
             proxy: None,
             features: Vec::new(),
             seed_profile: None,
         }
+    }
+
+    pub(crate) fn set_enable_webmcp(&mut self, enable_webmcp: bool) {
+        self.enable_webmcp = enable_webmcp;
     }
 
     pub(crate) fn set_seed_profile(&mut self, seed_profile: Option<std::path::PathBuf>) {
@@ -137,6 +138,12 @@ impl LaunchParams {
         } else {
             vec!["--disable-infobars".to_string()]
         };
+        if self.enable_webmcp {
+            let switch = "--enable-features=WebMCPTesting,DevToolsWebMCPSupport".to_string();
+            if !extra_args.contains(&switch) {
+                extra_args.push(switch);
+            }
+        }
         // Presets may overlap, and a client may repeat one; emit each switch once.
         for switch in self.features.iter().flat_map(|f| f.switches()) {
             let switch = (*switch).to_string();
@@ -299,9 +306,9 @@ mod tests {
     }
 
     #[test]
-    fn given_web_mcp_feature_when_planning_then_its_switches_are_appended() {
+    fn given_enable_webmcp_when_planning_then_switches_are_appended() {
         let mut params = default_params();
-        params.set_features(vec![ChromeFeature::WebMcp]);
+        params.set_enable_webmcp(true);
         assert_eq!(
             params.plan().extra_args,
             vec![
@@ -326,31 +333,14 @@ mod tests {
     }
 
     #[test]
-    fn given_several_features_when_planning_then_all_switches_are_present() {
-        let mut params = default_params();
-        params.set_features(vec![ChromeFeature::WebMcp, ChromeFeature::WebglSoftware]);
-        let extra_args = params.plan().extra_args;
-        for expected in ChromeFeature::WebMcp
-            .switches()
-            .iter()
-            .chain(ChromeFeature::WebglSoftware.switches())
-        {
-            assert!(
-                extra_args.contains(&(*expected).to_string()),
-                "{expected} must be present in {extra_args:?}"
-            );
-        }
-    }
-
-    #[test]
     fn given_repeated_feature_when_planning_then_switches_are_not_duplicated() {
         let mut params = default_params();
-        params.set_features(vec![ChromeFeature::WebMcp, ChromeFeature::WebMcp]);
+        params.set_features(vec![
+            ChromeFeature::WebglSoftware,
+            ChromeFeature::WebglSoftware,
+        ]);
         let extra_args = params.plan().extra_args;
-        let occurrences = extra_args
-            .iter()
-            .filter(|a| *a == "--enable-features=WebMCPTesting,DevToolsWebMCPSupport")
-            .count();
+        let occurrences = extra_args.iter().filter(|a| *a == "--use-gl=angle").count();
         assert_eq!(occurrences, 1, "got {extra_args:?}");
     }
 
@@ -365,12 +355,8 @@ mod tests {
 
     #[test]
     fn given_feature_names_when_deserializing_then_screaming_snake_case_is_accepted() {
-        let features: Vec<ChromeFeature> =
-            serde_json::from_str(r#"["WEB_MCP","WEBGL_SOFTWARE"]"#).unwrap();
-        assert_eq!(
-            features,
-            vec![ChromeFeature::WebMcp, ChromeFeature::WebglSoftware]
-        );
+        let features: Vec<ChromeFeature> = serde_json::from_str(r#"["WEBGL_SOFTWARE"]"#).unwrap();
+        assert_eq!(features, vec![ChromeFeature::WebglSoftware]);
     }
 
     #[test]

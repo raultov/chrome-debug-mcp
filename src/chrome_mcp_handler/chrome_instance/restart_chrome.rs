@@ -7,7 +7,7 @@ use rust_mcp_sdk::{
 
 #[macros::mcp_tool(
     name = "restart_chrome",
-    description = "Stops and restarts the Chrome instance selected by 'instance_id' (the default instance when omitted) with remote debugging enabled, optionally configuring proxy and opt-in capability presets. Side effects: destructive - terminates that instance's Chrome process and all its open tabs; closes its debugging connection; other instances keep running. Prerequisites: requires CHROME_PATH environment variable or chrome in PATH. Returns: restart success confirmation listing the presets applied. Use this to reset browser state, apply proxy settings, enable experimental browser capabilities, recover from crashes. Alternatives: 'reload' to refresh page without restart, 'navigate' to load new content. Parameters: 'features' accepts a closed set - 'WEB_MCP' (enables the experimental WebMCP surface for sites that expose tools to the browser) or 'WEBGL_SOFTWARE' (forces SwiftShader software WebGL for GPU-less environments); arbitrary Chrome flags are not accepted."
+    description = "Stops and restarts the Chrome instance selected by 'instance_id' (the default instance when omitted) with remote debugging enabled, optionally configuring proxy and opt-in capability presets. Side effects: destructive - terminates that instance's Chrome process and all its open tabs; closes its debugging connection; other instances keep running. Prerequisites: requires CHROME_PATH environment variable or chrome in PATH. Returns: restart success confirmation listing the presets applied. Use this to reset browser state, apply proxy settings, enable experimental browser capabilities, recover from crashes. Alternatives: 'reload' to refresh page without restart, 'navigate' to load new content. Parameters: 'features' accepts a closed set - 'WEBGL_SOFTWARE' (forces SwiftShader software WebGL for GPU-less environments); arbitrary Chrome flags are not accepted."
 )]
 #[derive(Debug, ::serde::Deserialize, ::serde::Serialize, macros::JsonSchema)]
 pub struct RestartChromeTool {
@@ -17,7 +17,7 @@ pub struct RestartChromeTool {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy_server: Option<String>,
 
-    /// Chrome capability presets to enable on the new instance. Constraints: closed set - 'WEB_MCP' turns on the experimental WebMCP surface for sites that expose tools to the browser; 'WEBGL_SOFTWARE' forces SwiftShader software WebGL for GPU-less environments. Arbitrary Chrome flags are not accepted. Interactions: presets apply only to the instance started by this call and are cleared by a later restart that omits them. Defaults to: [] (no presets).
+    /// Chrome capability presets to enable on the new instance. Constraints: closed set - 'WEBGL_SOFTWARE' forces SwiftShader software WebGL for GPU-less environments. Arbitrary Chrome flags are not accepted. Interactions: presets apply only to the instance started by this call and are cleared by a later restart that omits them. Defaults to: [] (no presets).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub features: Option<Vec<ChromeFeature>>,
 
@@ -65,12 +65,7 @@ impl RestartChromeTool {
         manager.set_proxy(proxy);
         manager.set_seed_profile(seed_report);
 
-        let default_features = if handler.enable_webmcp && manager.features().is_empty() {
-            vec![ChromeFeature::WebMcp]
-        } else {
-            manager.features().to_vec()
-        };
-        let features = tool.features.unwrap_or(default_features);
+        let features = tool.features.unwrap_or_else(|| manager.features().to_vec());
         let summary = describe_features(&features);
         manager.set_features(features.clone());
 
@@ -174,7 +169,7 @@ mod tests {
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "restart_chrome",
-            "arguments": { "instance_id": "default", "features": ["WEB_MCP"] }
+            "arguments": { "instance_id": "default", "features": ["WEBGL_SOFTWARE"] }
         }))
         .unwrap();
 
@@ -187,7 +182,7 @@ mod tests {
             .as_any()
             .downcast_ref::<MockChromeManager>()
             .expect("manager must be the MockChromeManager");
-        assert_eq!(mock.features(), &[ChromeFeature::WebMcp]);
+        assert_eq!(mock.features(), &[ChromeFeature::WebglSoftware]);
     }
 
     #[tokio::test]
@@ -242,7 +237,7 @@ mod tests {
 
         assert_eq!(
             allowed,
-            vec!["WEBGL_SOFTWARE".to_string(), "WEB_MCP".to_string()],
+            vec!["WEBGL_SOFTWARE".to_string()],
             "features must be schema-constrained to the closed preset list; schema was {schema:#}"
         );
 
@@ -289,8 +284,7 @@ mod tests {
     ///
     /// The explicit length makes adding a `ChromeFeature` variant a compile
     /// error here, so a new preset cannot slip past the coverage test below.
-    const ALL_FEATURE_PRESETS: [ChromeFeature; 2] =
-        [ChromeFeature::WebMcp, ChromeFeature::WebglSoftware];
+    const ALL_FEATURE_PRESETS: [ChromeFeature; 1] = [ChromeFeature::WebglSoftware];
 
     #[test]
     fn given_every_feature_preset_when_building_tool_descriptions_then_literal_is_documented() {
@@ -305,7 +299,7 @@ mod tests {
             // Matched exhaustively on purpose: a new variant fails to compile
             // until it is also listed in ALL_FEATURE_PRESETS.
             let literal = match feature {
-                ChromeFeature::WebMcp | ChromeFeature::WebglSoftware => feature.as_name(),
+                ChromeFeature::WebglSoftware => feature.as_name(),
             };
             assert!(
                 open_instance_description.contains(literal),
@@ -322,8 +316,8 @@ mod tests {
     fn given_features_when_describing_then_names_are_joined() {
         assert_eq!(describe_features(&[]), "none");
         assert_eq!(
-            describe_features(&[ChromeFeature::WebMcp, ChromeFeature::WebglSoftware]),
-            "WEB_MCP, WEBGL_SOFTWARE"
+            describe_features(&[ChromeFeature::WebglSoftware]),
+            "WEBGL_SOFTWARE"
         );
     }
 }

@@ -223,6 +223,7 @@ pub(crate) struct BrowserSession {
     pub(crate) tabs: Arc<std::sync::RwLock<chrome_instance::tab_registry::TabRegistry>>,
     pub(crate) session_listeners: Arc<Mutex<cdp_domains::event_pump::ListenerHandles>>,
     pub(crate) browser_version: Arc<Mutex<Option<BrowserVersion>>>,
+    pub(crate) enable_webmcp: bool,
 }
 
 impl BrowserSession {
@@ -311,12 +312,7 @@ impl BrowserSession {
                         });
                     }
 
-                    let has_webmcp = {
-                        let manager = self.chrome_manager.lock().await;
-                        manager
-                            .features()
-                            .contains(&chrome_instance::launch::ChromeFeature::WebMcp)
-                    };
+                    let has_webmcp = self.enable_webmcp;
                     if has_webmcp {
                         let enable_res = client
                             .send_raw_command("WebMCP.enable", cdp_browser_lite::NoParams)
@@ -675,9 +671,7 @@ impl ChromeMcpHandler {
             options.headless,
             options.user_profile,
         );
-        if options.enable_webmcp {
-            params.set_features(vec![chrome_instance::launch::ChromeFeature::WebMcp]);
-        }
+        params.set_enable_webmcp(options.enable_webmcp);
         if let Some(proxy) = &options.proxy_server {
             params.set_proxy(Some(proxy.clone()));
         }
@@ -704,6 +698,7 @@ impl ChromeMcpHandler {
                 cdp_domains::event_pump::ListenerHandles::default(),
             )),
             browser_version: Arc::new(Mutex::new(None)),
+            enable_webmcp: options.enable_webmcp,
         });
 
         let default_features = {
@@ -773,6 +768,7 @@ impl ChromeMcpHandler {
                 cdp_domains::event_pump::ListenerHandles::default(),
             )),
             browser_version: Arc::new(Mutex::new(None)),
+            enable_webmcp: false,
         });
 
         let desc = chrome_instance::registry::InstanceDescriptor {

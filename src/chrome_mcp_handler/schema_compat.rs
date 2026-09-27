@@ -147,7 +147,7 @@ mod tests {
         let normalized = normalize(json!({
             "description": "presets",
             "items": {
-                "oneOf": [{ "enum": ["WEB_MCP"] }, { "enum": ["WEBGL_SOFTWARE"] }]
+                "oneOf": [{ "enum": ["WEBGL_SOFTWARE"] }, { "enum": ["OTHER_PRESET"] }]
             },
             "type": ["array", "null"]
         }));
@@ -156,7 +156,7 @@ mod tests {
             normalized,
             json!({
                 "description": "presets",
-                "items": { "type": "string", "enum": ["WEB_MCP", "WEBGL_SOFTWARE"] },
+                "items": { "type": "string", "enum": ["WEBGL_SOFTWARE", "OTHER_PRESET"] },
                 "type": "array"
             })
         );
