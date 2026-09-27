@@ -75,8 +75,9 @@ impl OpenInstanceTool {
         if let Some(features) = args.features {
             child_params.set_features(features);
         }
-        if let Some(proxy) = args.proxy {
-            child_params.set_proxy(Some(proxy));
+        let proxy = args.proxy.or_else(|| handler.proxy_server.clone());
+        if let Some(p) = proxy {
+            child_params.set_proxy(Some(p));
         }
 
         let seed_report = super::cookie_seed::prepare_seed_report(

@@ -75,9 +75,9 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * **⚠️ Behaviour change**: Managed Chrome instances are now **terminated when the MCP server process exits** (including crashes). Previously a managed Chrome survived a server crash and was re-attached on restart; from now on it is killed. Attached (user-started) Chrome instances are never killed.
 
 **🔐 Proxy Authentication**
-* `enable_proxy_auth`: Automatically handles proxy authentication challenges by hooking into the `Fetch` CDP domain and supplying user-provided credentials (username & password).
-* **Robustness Improvements**: Now features a 30-second timeout for slower residential proxies, and defaults to only intercepting `Document` requests to prevent breaking background requests.
-* **Pre-warming**: Automatically navigates to a `prewarm_url` (defaults to `http://api.ipify.org?format=json`) to establish the proxy tunnel reliably before your main navigation task. You can optionally restrict the interception to a specific `resource_type`.
+* `enable_proxy_auth`: Automatically handles proxy authentication challenges by hooking into the `Fetch` CDP domain and supplying user-provided credentials. Exposed only when the server is started with `--proxy-server`.
+* **Robustness Improvements**: Features a 30-second timeout for slower residential proxies, and defaults to only intercepting `Document` requests to prevent breaking background requests.
+* **Pre-warming & Credentials**: Pre-warms proxy connections via `http://api.ipify.org?format=json`. Can use credentials passed via `--proxy-username`/`--proxy-password` or in tool arguments.
 
 **🖱️ User Input**
 * `click_element`: Simulates a native mouse click on a specific element by using a CSS selector. It calculates the center coordinates of the element and dispatches CDP mouse events directly.
@@ -266,6 +266,9 @@ These flags configure the MCP server process when launched. Pass them on the com
 | `--enable-automation` | Shows the native "Chrome is being controlled by automated test software" infobar. | `off` | Flag present (`on`) or omitted (`off`) |
 | `--user-profile` | Uses your default system Chrome profile (cookies, saved logins) instead of a fresh, isolated temporary profile. | `off` | Flag present (`on`) or omitted (`off`) |
 | `--allow-cookie-import` | Exposes cookie-import parameters (`copy_cookies`, `source_profile`, `confirm_restart`) to tools (`navigate`, `open_instance`, `restart_chrome`). | `off` | Flag present (`on`) or omitted (`off`) |
+| `--proxy-server <URL>` | Configures proxy server for Chrome instances and exposes proxy tools (`enable_proxy_auth`). Alias: `--proxy`. | *(none)* | Valid proxy URL (e.g. `http://proxy.example.com:8080`) |
+| `--proxy-username <USER>` | Default username for proxy authentication. | *(none)* | String username |
+| `--proxy-password <PASS>` | Default password for proxy authentication. | *(none)* | String password |
 | `--headless` | Runs Chrome in headless mode (no GUI). Required for GPU-less or Docker environments. | `off` | Flag present (`on`) or omitted (`off`) |
 | `--host <HOST>` | Target host IP address for Chrome remote debugging connection. | `127.0.0.1` | Valid IP address (e.g. `127.0.0.1`, `host.docker.internal`) |
 | `--port <PORT>` | Chrome remote debugging port for the primary instance. | `9222` | Any free TCP port (`1`–`65535`) |

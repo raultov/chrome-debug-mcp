@@ -61,7 +61,8 @@ impl RestartChromeTool {
             )));
         }
 
-        manager.set_proxy(tool.proxy_server);
+        let proxy = tool.proxy_server.or_else(|| handler.proxy_server.clone());
+        manager.set_proxy(proxy);
         manager.set_seed_profile(seed_report);
 
         let features = tool.features.unwrap_or_else(|| manager.features().to_vec());

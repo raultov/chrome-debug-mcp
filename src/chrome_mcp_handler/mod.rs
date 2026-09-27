@@ -568,6 +568,37 @@ impl BrowserSession {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct HandlerParams {
+    pub host: String,
+    pub port: u16,
+    pub local_only: bool,
+    pub enable_automation: bool,
+    pub headless: bool,
+    pub user_profile: bool,
+    pub allow_cookie_import: bool,
+    pub proxy_server: Option<String>,
+    pub proxy_username: Option<String>,
+    pub proxy_password: Option<String>,
+}
+
+impl Default for HandlerParams {
+    fn default() -> Self {
+        Self {
+            host: "127.0.0.1".into(),
+            port: 9222,
+            local_only: false,
+            enable_automation: false,
+            headless: false,
+            user_profile: false,
+            allow_cookie_import: false,
+            proxy_server: None,
+            proxy_username: None,
+            proxy_password: None,
+        }
+    }
+}
+
 pub struct ChromeMcpHandler {
     pub(crate) default_session: Arc<BrowserSession>,
     pub(crate) registry: Arc<chrome_instance::registry::Registry>,
@@ -575,6 +606,9 @@ pub struct ChromeMcpHandler {
     pub(crate) base_params: chrome_instance::launch::LaunchParams,
     pub(crate) local_only: bool,
     pub(crate) allow_cookie_import: bool,
+    pub(crate) proxy_server: Option<String>,
+    pub(crate) proxy_username: Option<String>,
+    pub(crate) proxy_password: Option<String>,
     pub(crate) is_test: bool,
 }
 
@@ -629,22 +663,18 @@ impl ChromeMcpHandler {
         }
     }
 
-    pub fn new_with_params(
-        host: String,
-        port: u16,
-        local_only: bool,
-        enable_automation: bool,
-        headless: bool,
-        user_profile: bool,
-        allow_cookie_import: bool,
-    ) -> Self {
-        let params = chrome_instance::launch::LaunchParams::new(
-            host,
-            port,
-            enable_automation,
-            headless,
-            user_profile,
+    pub fn new_with_params(options: HandlerParams) -> Self {
+        let port = options.port;
+        let mut params = chrome_instance::launch::LaunchParams::new(
+            options.host,
+            options.port,
+            options.enable_automation,
+            options.headless,
+            options.user_profile,
         );
+        if let Some(proxy) = &options.proxy_server {
+            params.set_proxy(Some(proxy.clone()));
+        }
         let pool = Arc::new(cdp_browser_lite::BrowserPool::new());
         let registry = Arc::new(chrome_instance::registry::Registry::new(8)); // max 8 instances
 
@@ -671,8 +701,6 @@ impl ChromeMcpHandler {
         });
 
         let default_features = {
-            // Can block, but it's during startup new_with_params
-            // Let's get features from base_params instead to avoid blocking on mutex in constructor
             params
                 .features()
                 .iter()
@@ -696,8 +724,11 @@ impl ChromeMcpHandler {
             registry,
             pool,
             base_params: params,
-            local_only,
-            allow_cookie_import,
+            local_only: options.local_only,
+            allow_cookie_import: options.allow_cookie_import,
+            proxy_server: options.proxy_server,
+            proxy_username: options.proxy_username,
+            proxy_password: options.proxy_password,
             is_test: false,
         }
     }
@@ -756,6 +787,9 @@ impl ChromeMcpHandler {
             base_params: params,
             local_only: false,
             allow_cookie_import: false,
+            proxy_server: None,
+            proxy_username: None,
+            proxy_password: None,
             is_test: true,
         }
     }
@@ -763,7 +797,7 @@ impl ChromeMcpHandler {
 
 impl Default for ChromeMcpHandler {
     fn default() -> Self {
-        Self::new_with_params("127.0.0.1".into(), 9222, false, false, false, false, false)
+        Self::new_with_params(HandlerParams::default())
     }
 }
 
@@ -818,7 +852,7 @@ impl ServerHandler for ChromeMcpHandler {
         _request: Option<PaginatedRequestParams>,
         _runtime: Arc<dyn McpServer>,
     ) -> std::result::Result<ListToolsResult, RpcError> {
-        let tools = vec![
+        let mut tools = vec![
             CaptureScreenshotTool::tool(),
             ClickElementTool::tool(),
             FillInputTool::tool(),
@@ -847,7 +881,6 @@ impl ServerHandler for ChromeMcpHandler {
             GetConsoleLogsTool::tool(),
             GetPerformanceMetricsTool::tool(),
             ProfilePagePerformanceTool::tool(),
-            EnableProxyAuthTool::tool(),
             SendCdpCommandTool::tool(),
             GetCustomEventsTool::tool(),
             cdp_domains::webmcp::ListWebmcpToolsTool::tool(),
@@ -855,6 +888,10 @@ impl ServerHandler for ChromeMcpHandler {
             cdp_domains::webmcp::GetWebmcpInvocationTool::tool(),
             cdp_domains::webmcp::ListWebmcpInvocationsTool::tool(),
         ];
+
+        if self.proxy_server.is_some() {
+            tools.push(EnableProxyAuthTool::tool());
+        }
 
         Ok(ListToolsResult {
             tools: tools
@@ -928,6 +965,11 @@ impl ServerHandler for ChromeMcpHandler {
         } else if params.name == "profile_page_performance" {
             ProfilePagePerformanceTool::handle(params, self).await
         } else if params.name == "enable_proxy_auth" {
+            if self.proxy_server.is_none() {
+                return Err(CallToolError::from_message(
+                    "Tool 'enable_proxy_auth' is disabled. Start chrome-debug-mcp with --proxy-server to enable proxy support.",
+                ));
+            }
             EnableProxyAuthTool::handle(params, self).await
         } else if params.name == "send_cdp_command" {
             SendCdpCommandTool::handle(params, self).await
@@ -1063,31 +1105,42 @@ mod tests {
 
     #[test]
     fn test_chrome_mcp_handler_new_with_params() {
-        let handler = ChromeMcpHandler::new_with_params(
-            "host.docker.internal".into(),
-            9222,
-            true,
-            true,
-            true,
-            false,
-            false,
-        );
+        let handler = ChromeMcpHandler::new_with_params(HandlerParams {
+            host: "host.docker.internal".into(),
+            port: 9222,
+            local_only: true,
+            enable_automation: true,
+            headless: true,
+            user_profile: false,
+            allow_cookie_import: false,
+            ..Default::default()
+        });
         assert!(handler.local_only);
         assert!(!handler.allow_cookie_import);
+        assert_eq!(handler.proxy_server, None);
     }
 
     #[test]
     fn test_chrome_mcp_handler_new_with_automation() {
-        let handler = ChromeMcpHandler::new_with_params(
-            "127.0.0.1".into(),
-            9444,
-            true,
-            true,
-            false,
-            true,
-            false,
-        );
+        let handler = ChromeMcpHandler::new_with_params(HandlerParams {
+            host: "127.0.0.1".into(),
+            port: 9444,
+            local_only: true,
+            enable_automation: true,
+            headless: false,
+            user_profile: true,
+            allow_cookie_import: false,
+            proxy_server: Some("http://proxy.example.com:8080".into()),
+            proxy_username: Some("user".into()),
+            proxy_password: Some("pass".into()),
+        });
         assert!(handler.local_only);
+        assert_eq!(
+            handler.proxy_server,
+            Some("http://proxy.example.com:8080".into())
+        );
+        assert_eq!(handler.proxy_username, Some("user".into()));
+        assert_eq!(handler.proxy_password, Some("pass".into()));
     }
 
     #[tokio::test]
@@ -1102,8 +1155,8 @@ mod tests {
         assert!(result.is_ok());
         let tools = result.unwrap().tools;
 
-        // Ensure all registered tools are present
-        assert_eq!(tools.len(), 35);
+        // Without proxy configured, 34 tools are listed (enable_proxy_auth is excluded)
+        assert_eq!(tools.len(), 34);
         let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"scroll".to_string()));
         assert!(tool_names.contains(&"capture_screenshot".to_string()));
@@ -1116,6 +1169,25 @@ mod tests {
         assert!(tool_names.contains(&"get_console_logs".to_string()));
         assert!(tool_names.contains(&"get_performance_metrics".to_string()));
         assert!(tool_names.contains(&"profile_page_performance".to_string()));
+        assert!(!tool_names.contains(&"enable_proxy_auth".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_handle_list_tools_request_with_proxy() {
+        let mut handler = ChromeMcpHandler::new_test();
+        handler.proxy_server = Some("http://proxy.example.com:8080".to_string());
+        let mock_server = Arc::new(DummyMcpServer {});
+
+        let result = handler
+            .handle_list_tools_request(None, mock_server.clone())
+            .await;
+
+        assert!(result.is_ok());
+        let tools = result.unwrap().tools;
+
+        // With proxy configured, enable_proxy_auth is included (35 tools)
+        assert_eq!(tools.len(), 35);
+        let tool_names: Vec<String> = tools.into_iter().map(|t| t.name).collect();
         assert!(tool_names.contains(&"enable_proxy_auth".to_string()));
     }
 

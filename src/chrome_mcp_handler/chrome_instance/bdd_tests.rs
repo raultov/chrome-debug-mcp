@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::chrome_mcp_handler::ChromeMcpHandler;
+    use crate::chrome_mcp_handler::{ChromeMcpHandler, HandlerParams};
 
     use crate::chrome_mcp_handler::cdp_domains::tests::spawn_mock_chrome_server;
 
@@ -145,15 +145,10 @@ mod tests {
     #[tokio::test]
     async fn given_user_profile_mode_when_opening_second_instance_then_rejected_with_reason() {
         // Start handler with --user-profile
-        let handler = ChromeMcpHandler::new_with_params(
-            "127.0.0.1".into(),
-            9222,
-            false,
-            false,
-            false,
-            true, // user_profile = true
-            false,
-        );
+        let handler = ChromeMcpHandler::new_with_params(HandlerParams {
+            user_profile: true,
+            ..Default::default()
+        });
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
             "name": "open_instance",

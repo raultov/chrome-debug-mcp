@@ -18,10 +18,12 @@ pub struct EnableProxyAuthTool {
     pub instance_id: Option<String>,
     /// The Tab ID of the target tab. Omit to use the active tab.
     pub tab_id: Option<String>,
-    /// Proxy authentication username. Constraints: non-empty string. Interactions: paired with 'password'; sent to proxy server on auth challenge.
-    pub username: String,
-    /// Proxy authentication password. Constraints: non-empty string. Interactions: paired with 'username'; sent to proxy server on auth challenge.
-    pub password: String,
+    /// Proxy authentication username. Constraints: non-empty string. If omitted, uses the --proxy-username set at startup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    /// Proxy authentication password. Constraints: non-empty string. If omitted, uses the --proxy-password set at startup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
     /// Resource type to intercept. Constraints: 'Document', 'Image', 'Script', 'XHR', etc. (Chrome CDP resource types). Interactions: filters which request types trigger auth handling. Defaults to: "Document".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_type: Option<String>,
@@ -72,8 +74,25 @@ impl EnableProxyAuthTool {
             let mut fetch_events = target.on_domain("Fetch");
             let target_clone = target.clone();
             let target_nav = target.clone();
-            let username = tool.username.clone();
-            let password = tool.password.clone();
+            let username = tool
+                .username
+                .clone()
+                .or_else(|| handler.proxy_username.clone())
+                .ok_or_else(|| {
+                    CallToolError::from_message(
+                        "Proxy authentication username required. Provide 'username' in tool arguments or start chrome-debug-mcp with --proxy-username."
+                    )
+                })?;
+
+            let password = tool
+                .password
+                .clone()
+                .or_else(|| handler.proxy_password.clone())
+                .ok_or_else(|| {
+                    CallToolError::from_message(
+                        "Proxy authentication password required. Provide 'password' in tool arguments or start chrome-debug-mcp with --proxy-password."
+                    )
+                })?;
 
             tokio::spawn(async move {
                 eprintln!("Proxy auth handler started. Waiting for challenges...");
@@ -192,8 +211,8 @@ mod tests {
         }));
         assert!(tool.is_ok());
         let tool = tool.unwrap();
-        assert_eq!(tool.username, "user");
-        assert_eq!(tool.password, "pass");
+        assert_eq!(tool.username, Some("user".to_string()));
+        assert_eq!(tool.password, Some("pass".to_string()));
         assert_eq!(tool.resource_type, None);
         assert_eq!(tool.prewarm_url, None);
     }
@@ -217,6 +236,7 @@ mod tests {
         let port = spawn_mock_chrome_server().await;
 
         let mut handler = ChromeMcpHandler::new_test();
+        handler.proxy_server = Some("http://proxy.example.com:8080".into());
         Arc::get_mut(&mut handler.default_session)
             .unwrap()
             .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
@@ -241,5 +261,27 @@ mod tests {
             "Content didn't match: {}",
             content_str
         );
+    }
+
+    #[tokio::test]
+    async fn test_enable_proxy_auth_handle_with_cli_credentials() {
+        let port = spawn_mock_chrome_server().await;
+
+        let mut handler = ChromeMcpHandler::new_test();
+        handler.proxy_server = Some("http://proxy.example.com:8080".into());
+        handler.proxy_username = Some("cli_user".into());
+        handler.proxy_password = Some("cli_pass".into());
+        Arc::get_mut(&mut handler.default_session)
+            .unwrap()
+            .chrome_manager = Arc::new(Mutex::new(MockChromeManager::new(port)));
+
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "enable_proxy_auth",
+            "arguments": {}
+        }))
+        .unwrap();
+
+        let result = EnableProxyAuthTool::handle(params, &handler).await;
+        assert!(result.is_ok());
     }
 }
