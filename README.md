@@ -252,19 +252,62 @@ See **Compilation (From Source)** below.
 
 ## ⚙️ Configuration
 
-By default, the MCP Server discovers the Chrome executable through `cdp-browser-lite`'s cross-platform search: `CHROME_PATH` first (absolute priority), then common binaries in your `PATH` (`google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`), then OS-specific locations (`/Applications/Google Chrome.app/...` on macOS, the `chrome.exe` install dir on Windows, `/usr/bin/google-chrome`, `/opt/google/chrome/chrome` and `/snap/bin/chromium` on Linux). This is a strict superset of the paths the server previously hardcoded.
+The MCP Server discovers the Chrome executable using a cross-platform search: `CHROME_PATH` environment variable first (absolute priority), followed by common binaries in `PATH` (`google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`), and finally standard OS install paths (`/Applications/Google Chrome.app/...` on macOS, `chrome.exe` locations on Windows, `/usr/bin/google-chrome`, `/opt/google/chrome/chrome`, and `/snap/bin/chromium` on Linux).
 
-**Arguments:**
-* `--local`: Restricts navigation to local addresses only (`localhost`, `127.0.0.1`, `192.168.x.x`, or `*.local`). Highly recommended for security.
-* `--headless`: Runs Chrome in headless mode (no GUI). Essential for Docker or server environments.
-* `--user-profile`: Use the default system user profile (sessions, cookies, etc.) instead of a fresh one. This is useful for avoiding repeated logins during research sessions.
-* `--host`: Specifies the target host for the Chrome instance (default: `127.0.0.1`). Use `host.docker.internal` to connect to a host machine from a container.
-* `--port`: Specifies the remote debugging port (default: `9222`).
-* `--enable-automation`: Enables the "controlled by automated software" infobar.
-* `--max-instances`: Limits the maximum number of concurrent Chrome instances (default: 8). Ignored if `--user-profile` is set.
+---
 
-**Environment Variables:**
-* `CHROME_PATH`: Explicitly define the path to the Chrome executable.
+### 1. MCP Server Startup Flags (CLI)
+
+These flags configure the MCP server process when launched. Pass them on the command line when starting `chrome-debug-mcp` (or in your client's `args` / `command` definition).
+
+| Flag | Description | Default | Possible Values / Format |
+|---|---|---|---|
+| `--local` | Restricts navigation to local addresses only (`localhost`, `127.0.0.1`, `192.168.x.x`, `*.local`). Highly recommended for security. | `off` | Flag present (`on`) or omitted (`off`) |
+| `--enable-automation` | Shows the native "Chrome is being controlled by automated test software" infobar. | `off` | Flag present (`on`) or omitted (`off`) |
+| `--user-profile` | Uses your default system Chrome profile (cookies, saved logins) instead of a fresh, isolated temporary profile. | `off` | Flag present (`on`) or omitted (`off`) |
+| `--allow-cookie-import` | Exposes cookie-import parameters (`copy_cookies`, `source_profile`, `confirm_restart`) to tools (`navigate`, `open_instance`, `restart_chrome`). | `off` | Flag present (`on`) or omitted (`off`) |
+| `--headless` | Runs Chrome in headless mode (no GUI). Required for GPU-less or Docker environments. | `off` | Flag present (`on`) or omitted (`off`) |
+| `--host <HOST>` | Target host IP address for Chrome remote debugging connection. | `127.0.0.1` | Valid IP address (e.g. `127.0.0.1`, `host.docker.internal`) |
+| `--port <PORT>` | Chrome remote debugging port for the primary instance. | `9222` | Any free TCP port (`1`–`65535`) |
+| `--max-instances <N>` | Maximum number of concurrent independent Chrome instances allowed in the instance pool. Ignored if `--user-profile` is set. | `8` | Positive integer (e.g. `1`, `4`, `16`) |
+
+---
+
+### 2. Environment Variables
+
+| Variable | Description | Default | Value Format |
+|---|---|---|---|
+| `CHROME_PATH` | Explicit absolute path to the Chrome or Chromium binary. Overrides all automatic binary discovery paths. | *(not set)* | Absolute file path (e.g. `/usr/bin/google-chrome-stable` or `C:\Program Files\Google\Chrome\Application\chrome.exe`) |
+
+---
+
+### 3. Chrome Instance Launch Switches & Presets
+
+When the MCP server spawns Chrome, it constructs switches based on its startup flags, dynamically allocated ports, and capability presets requested per instance (e.g. via `open_instance` or `restart_chrome`).
+
+#### A. Server-to-Chrome Flag Mapping
+
+| Server Input / State | Chrome Command Line Switch(es) Applied | Effect / Description |
+|---|---|---|
+| `--port <PORT>` | `--remote-debugging-port=<PORT>` | Binds V8 Inspector CDP WebSocket endpoint to the specified port. |
+| `--user-profile` omitted *(default)* | `--user-data-dir=<TMP_DIR>` | Creates an isolated, ephemeral profile directory in `/tmp` deleted automatically on shutdown. |
+| `--user-profile` passed | *(no `--user-data-dir` switch)* | Delegates to system default profile location (`~/.config/google-chrome`, Keychain/DPAPI). |
+| `--headless` passed | `--headless` | Runs browser without GUI. |
+| `--enable-automation` omitted *(default)* | `--disable-infobars` | Suppresses the "controlled by automated software" notification bar for stealthier interaction. |
+| `--enable-automation` passed | *(no `--disable-infobars` switch)* | Shows native automation infobar. |
+| `proxy_server` parameter *(dynamic)* | `--proxy-server="<PROXY_URL>"` | Routes instance network traffic through the specified HTTP/SOCKS proxy. |
+| Seed profile / Cookie import *(dynamic)* | `--user-data-dir=<SEEDED_TMP_DIR>` | Copies decrypted Chrome cookies into a fresh ephemeral profile copy. |
+
+#### B. Capability Presets (`features` parameter)
+
+Dynamic tools (`open_instance`, `restart_chrome`) accept a `features` array of closed capability presets:
+
+| Preset Name | Chrome Command Line Switches Applied | Use Case / Purpose |
+|---|---|---|
+| `"WEB_MCP"` | `--enable-features=WebMCPTesting`<br>`--categoryExperimentalWebmcp=true` | Enables the experimental WebMCP page-exposed tools surface. |
+| `"WEBGL_SOFTWARE"` | `--use-gl=angle`<br>`--use-angle=swiftshader`<br>`--enable-unsafe-swiftshader` | Forces SwiftShader software rasterization for WebGL in GPU-less containers. |
+
+---
 
 ---
 
