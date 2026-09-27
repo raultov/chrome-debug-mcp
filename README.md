@@ -200,6 +200,16 @@ brew install raultov/tap/chrome-debug-mcp
 ```
 The formula fetches the pre-compiled binary from GitHub Releases on every release — no Rust toolchain needed. Works on Apple Silicon/Intel macOS and on Linux through [Homebrew-on-Linux](https://docs.brew.sh/Homebrew-on-Linux).
 
+**Option E: Install via npm / npx (cross-platform)**
+```bash
+# run once without installing anything else (Node.js >= 14)
+npx -y @raultov/chrome-debug-mcp
+
+# or install globally — the command is still `chrome-debug-mcp`
+npm install -g @raultov/chrome-debug-mcp
+```
+The npm package is a small wrapper whose `postinstall` downloads the pre-compiled binary for your platform from GitHub Releases — no Rust toolchain, no Homebrew. MCP clients can launch it directly with `claude mcp add chrome-debug-mcp -- npx -y @raultov/chrome-debug-mcp`.
+
 ### 2. Configure your MCP Client
 This server is fully tested and confirmed to work with **Claude Code**, **agy**, and **codex**. Configure your AI client to execute the server using any of the following modes.
 

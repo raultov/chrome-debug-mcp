@@ -19,4 +19,7 @@ install-updater = false
 allow-dirty = ["ci"]
 # Publish the Homebrew formula to our custom tap on every stable release
 tap = "raultov/homebrew-tap"
-publish-jobs = ["homebrew"]
+# Publish the npm installer package to the @raultov scope on every stable release
+# (the plain "chrome-debug-mcp" name on npm is taken by a third party)
+npm-scope = "@raultov"
+publish-jobs = ["homebrew", "npm"]
