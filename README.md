@@ -135,7 +135,33 @@ Requires restarting Chrome with the `WEB_MCP` capability preset (see `restart_ch
 
 Every method installs the **same pre-compiled binaries** published on each [GitHub Release](https://github.com/raultov/chrome-debug-mcp/releases); a Rust toolchain is only needed for the Cargo and source routes. The npm packages are small wrappers whose `postinstall` fetches the pre-compiled binary for your platform from GitHub Releases — no compiling, no Rust toolchain.
 
-Methods are grouped by platform and ordered by popularity.
+Prefer zero effort? The one-prompt route below lets your AI agent do all of it. Otherwise, methods are grouped by platform and ordered by popularity.
+
+### 🤖 One-Prompt Install (any platform)
+
+Paste this prompt into any AI coding agent's chat (Claude Code, opencode, Cursor, Codex CLI, Copilot, ...) and let it install the server and register it with every MCP-capable client it detects on your machine:
+
+```text
+Install and set up the chrome-debug-mcp MCP server on this machine. Do not launch Chrome yourself — the server launches and manages it automatically.
+
+1. Install the server binary with the first method that works on this OS:
+   - Homebrew available (macOS/Linux): brew install raultov/tap/chrome-debug-mcp
+   - Node.js >= 14 available (any OS): npm install -g @raultov/chrome-debug-mcp
+   - macOS/Linux fallback: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/raultov/chrome-debug-mcp/releases/latest/download/chrome-debug-mcp-installer.sh | sh
+   - Windows fallback: download and run the .msi from https://github.com/raultov/chrome-debug-mcp/releases/latest
+   Verify with: chrome-debug-mcp --version (add the install dir to PATH if it is not found).
+
+2. Register the MCP server with every AI client you detect on this machine:
+   - Claude Code: claude mcp add --scope user chrome-debug-mcp chrome-debug-mcp
+   - opencode (and agy, its bridge): merge into ~/.config/opencode/opencode.json —
+     "mcp": { "chrome-debug-mcp": { "type": "local", "command": ["chrome-debug-mcp"] } }
+   - Codex CLI: append to ~/.codex/config.toml —
+     [mcp_servers.chrome-debug-mcp]
+     command = "chrome-debug-mcp"
+   - Any other MCP-capable client (Cursor, Windsurf, VS Code, ...): add it with its own MCP settings, command "chrome-debug-mcp" with no arguments.
+
+3. Report what you installed and which clients you configured, and remind me to restart each client so the MCP server loads. Do not enable --user-profile or cookie import unless I ask for them.
+```
 
 ### macOS
 
