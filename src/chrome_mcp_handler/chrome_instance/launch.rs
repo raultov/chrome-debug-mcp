@@ -39,10 +39,7 @@ impl ChromeFeature {
     /// Chrome command line switches this preset expands to.
     pub(crate) fn switches(self) -> &'static [&'static str] {
         match self {
-            Self::WebMcp => &[
-                "--enable-features=WebMCPTesting",
-                "--categoryExperimentalWebmcp=true",
-            ],
+            Self::WebMcp => &["--enable-features=WebMCPTesting,DevToolsWebMCPSupport"],
             Self::WebglSoftware => &[
                 "--use-gl=angle",
                 "--use-angle=swiftshader",
@@ -309,8 +306,7 @@ mod tests {
             params.plan().extra_args,
             vec![
                 "--disable-infobars".to_string(),
-                "--enable-features=WebMCPTesting".to_string(),
-                "--categoryExperimentalWebmcp=true".to_string(),
+                "--enable-features=WebMCPTesting,DevToolsWebMCPSupport".to_string(),
             ]
         );
     }
@@ -353,7 +349,7 @@ mod tests {
         let extra_args = params.plan().extra_args;
         let occurrences = extra_args
             .iter()
-            .filter(|a| *a == "--enable-features=WebMCPTesting")
+            .filter(|a| *a == "--enable-features=WebMCPTesting,DevToolsWebMCPSupport")
             .count();
         assert_eq!(occurrences, 1, "got {extra_args:?}");
     }
