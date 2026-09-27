@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.5.1] - 2026-09-27
 ### Features
 - Homebrew distribution: the release pipeline (cargo-dist 0.32.0) now publishes a formula to the `raultov/homebrew-tap` repository on every stable release, enabling `brew install raultov/tap/chrome-debug-mcp` on macOS (Apple Silicon/Intel) and Linux (Homebrew-on-Linux). The formula fetches the pre-built binaries from GitHub Releases, so users need no Rust toolchain.
 - npm/npx distribution: the release pipeline now also publishes the installer package to npm as `@raultov/chrome-debug-mcp` (the unscoped name is taken by a third party), enabling `npx -y @raultov/chrome-debug-mcp`, `npm install -g @raultov/chrome-debug-mcp`, and the canonical MCP-client pattern `claude mcp add chrome-debug-mcp -- npx -y @raultov/chrome-debug-mcp`. The package is a small shim whose `postinstall` fetches the pre-built binary from GitHub Releases — no Rust toolchain, no Homebrew.
