@@ -298,7 +298,8 @@ When the MCP server spawns Chrome, it constructs switches based on its startup f
 | `--headless` passed | `--headless` | Runs browser without GUI. |
 | `--enable-automation` omitted *(default)* | `--disable-infobars` | Suppresses the "controlled by automated software" notification bar for stealthier interaction. |
 | `--enable-automation` passed | *(no `--disable-infobars` switch)* | Shows native automation infobar. |
-| `proxy_server` parameter *(dynamic)* | `--proxy-server="<PROXY_URL>"` | Routes instance network traffic through the specified HTTP/SOCKS proxy. |
+| `--proxy-server <URL>` passed | `--proxy-server="<PROXY_URL>"` | Routes instance network traffic through the specified HTTP/SOCKS proxy. |
+| `--enable-webmcp` passed | `--enable-features=WebMCPTesting,DevToolsWebMCPSupport` | Enables the WebMCP runtime testing API and DevTools CDP inspection switches in Chrome. |
 | Seed profile / Cookie import *(dynamic)* | `--user-data-dir=<SEEDED_TMP_DIR>` | Copies decrypted Chrome cookies into a fresh ephemeral profile copy. |
 
 #### B. Capability Presets (`features` parameter)
