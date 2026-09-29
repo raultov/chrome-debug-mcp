@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.5.2] - 2026-09-29
 ### Chores
 - npm/Glama metadata: added a metadata-only `package.json` at the repository root declaring the published package name `@raultov/chrome-debug-mcp`, so package registries and the Glama MCP directory can link the listing to the npm package (version badge, download counter, Resources → NPM Package). It is not an installable package: the real npm shim is generated and published by `cargo-dist` on each release, and a `prepublishOnly` script blocks accidental publishes from the repo root. `package.json` is excluded from the crates.io tarball.
 - Release guard: new `make version-check` gate (wired into `make check`) fails when `package.json` drifts from the `Cargo.toml` version, keeping the npm/Glama metadata in sync across releases.
