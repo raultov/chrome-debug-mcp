@@ -2,9 +2,11 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/rust-stable-brightgreen.svg)](https://www.rust-lang.org)
+[![npm](https://img.shields.io/npm/v/@raultov/chrome-debug-mcp?label=npm)](https://www.npmjs.com/package/@raultov/chrome-debug-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/@raultov/chrome-debug-mcp)](https://www.npmjs.com/package/@raultov/chrome-debug-mcp)
 [![chrome-debug-mcp MCP server](https://glama.ai/mcp/servers/raultov/chrome-debug-mcp/badges/score.svg)](https://glama.ai/mcp/servers/raultov/chrome-debug-mcp)
 
-**chrome-debug-mcp** is an asynchronous Rust-based **Model Context Protocol (MCP)** server that allows AI agents and Large Language Models to natively control, automate, and debug Chromium-based browsers via the **Chrome DevTools Protocol (CDP)**.
+**chrome-debug-mcp** is an asynchronous Rust-based **Model Context Protocol (MCP)** server that allows AI agents and Large Language Models to natively control, automate, and debug Chromium-based browsers via the **Chrome DevTools Protocol (CDP)**. Written in Rust for a single, dependency-free binary — but installed like any other MCP server: `npx -y @raultov/chrome-debug-mcp`, Homebrew, or a one-line installer. **No Rust toolchain required.**
 
 Using [`cdp-browser-lite`](https://crates.io/crates/cdp-browser-lite) underneath (which itself re-exports the `cdp-lite` client), this MCP server directly hooks into the browser avoiding heavy abstractions, enabling live-debugging sessions directly from your editor or chat-interface. Starting from v0.2.0, it can also manage the Chrome process lifecycle automatically.
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+### Chores
+- npm/Glama metadata: added a metadata-only `package.json` at the repository root declaring the published package name `@raultov/chrome-debug-mcp`, so package registries and the Glama MCP directory can link the listing to the npm package (version badge, download counter, Resources → NPM Package). It is not an installable package: the real npm shim is generated and published by `cargo-dist` on each release, and a `prepublishOnly` script blocks accidental publishes from the repo root. `package.json` is excluded from the crates.io tarball.
+- Release guard: new `make version-check` gate (wired into `make check`) fails when `package.json` drifts from the `Cargo.toml` version, keeping the npm/Glama metadata in sync across releases.
+
+### Docs
+- README: added npm version and npm downloads-per-month badges to the header, and extended the intro paragraph to state the install story up front — `npx -y @raultov/chrome-debug-mcp`, Homebrew, or a one-line installer, no Rust toolchain required — while keeping Rust as the headline implementation detail.
+
 ## [1.5.1] - 2026-09-27
 ### Features
 - Homebrew distribution: the release pipeline (cargo-dist 0.32.0) now publishes a formula to the `raultov/homebrew-tap` repository on every stable release, enabling `brew install raultov/tap/chrome-debug-mcp` on macOS (Apple Silicon/Intel) and Linux (Homebrew-on-Linux). The formula fetches the pre-built binaries from GitHub Releases, so users need no Rust toolchain.
