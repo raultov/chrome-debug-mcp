@@ -117,7 +117,7 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * `remove_breakpoint`: Remove a previously set breakpoint.
 
 **🧩 WebMCP (page-exposed tools)**
-Requires launching the server with `--enable-webmcp` to expose tools (`webmcp_*`) and enable Chromium feature switches (`--enable-features=WebMCPTesting,DevToolsWebMCPSupport`).
+Requires launching the server with `--enable-webmcp` to expose tools (`webmcp_*`) and enable Chromium feature switches (`--enable-features=WebMCPTesting,DevToolsWebMCPSupport`). All WebMCP tools accept an optional `tab_id` to target a specific tab (omit to use the active tab).
 * `webmcp_list_tools`: Lists the tools the current page exposes to the browser (name, description, `inputSchema`, `frameId`).
 * `webmcp_invoke_tool`: Invokes a page tool by name. `input` is a **JSON object string** (e.g. `"{}"` or `"{\"product\":\"knot\"}"`), matching the tool's `inputSchema`. Blocks up to 30s waiting for the result.
 * `webmcp_get_invocation`: Returns the status (`Pending`/`Completed`/`Error`/`Canceled`) and result of an invocation by `invocationId` — non-blocking.
@@ -135,6 +135,8 @@ Requires launching the server with `--enable-webmcp` to expose tools (`webmcp_*`
 ## 📦 Installation
 
 Every method installs the **same pre-compiled binaries** published on each [GitHub Release](https://github.com/raultov/chrome-debug-mcp/releases); a Rust toolchain is only needed for the Cargo and source routes. The npm packages are small wrappers whose `postinstall` fetches the pre-compiled binary for your platform from GitHub Releases — no compiling, no Rust toolchain.
+
+> ⚠️ **Always use the scoped npm name `@raultov/chrome-debug-mcp`.** The unscoped `chrome-debug-mcp` on npm is a different, unrelated project.
 
 Prefer zero effort? The one-prompt route below lets your AI agent do all of it. Otherwise, methods are grouped by platform and ordered by popularity.
 
@@ -380,8 +382,9 @@ Most MCP clients (like Claude Code or any JSON-based config) use this structure.
 *Note: The `chrome-docker-hybrid` mode using `--net=host` is the recommended way on Linux to allow the container to access your local Chrome instance on `127.0.0.1`.*
 
 #### **Claude Code**
-To add and activate the server in Claude Code:
+To add and activate the server in Claude Code. The two positional arguments are `<name>` (the server's label in Claude) and `<command>` (the executable to launch):
 ```bash
+# Run the binary installed by any method above (Homebrew, npm -g, installer, cargo, MSI):
 claude mcp add chrome-debug-mcp chrome-debug-mcp
 # ...or without installing anything first (Node.js >= 14):
 claude mcp add chrome-debug-mcp -- npx -y @raultov/chrome-debug-mcp
