@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.5.3] - 2026-10-03
+### Fixes
+- **WebMCP per-tab state isolation:** `webmcp_list_tools` and `webmcp_invoke_tool` now read from and write to the per-tab `WebmcpState` (via `session.webmcp_state(tab_id)`) instead of the default connection's state, fixing a bug where tools registered in a tab opened with `open_tab` were invisible (`webmcp_list_tools` returned `[]`) and `webmcp_invoke_tool` would wait 30s for a response that arrived in the wrong state. Both tools now accept an optional `tab_id` parameter ("Omit to use the active tab") consistent with `webmcp_get_invocation` and `webmcp_list_invocations`.
+- **WebMCP availability per tab:** `enable_tab_domains` now records the `WebMCP.enable` result (`Enabled` / `Unsupported`) in each tab's `WebmcpState.availability`, so the empty-list warning accurately reflects whether WebMCP is active in the targeted tab rather than always claiming "testing features are not active".
+
 ## [1.5.2] - 2026-09-29
 ### Chores
 - npm/Glama metadata: added a metadata-only `package.json` at the repository root declaring the published package name `@raultov/chrome-debug-mcp`, so package registries and the Glama MCP directory can link the listing to the npm package (version badge, download counter, Resources → NPM Package). It is not an installable package: the real npm shim is generated and published by `cargo-dist` on each release, and a `prepublishOnly` script blocks accidental publishes from the repo root. `package.json` is excluded from the crates.io tarball.
