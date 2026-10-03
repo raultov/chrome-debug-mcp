@@ -13,6 +13,8 @@ use rust_mcp_sdk::{
 pub struct ListWebmcpToolsTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
 }
 
 impl ListWebmcpToolsTool {
@@ -26,7 +28,8 @@ impl ListWebmcpToolsTool {
         .map_err(|e| CallToolError::from_message(format!("Failed to parse arguments: {}", e)))?;
         let session = handler.session(tool.instance_id.clone()).await?;
 
-        let st = session.webmcp_state.lock().await;
+        let webmcp_state = session.webmcp_state(tool.tab_id.clone())?;
+        let st = webmcp_state.lock().await;
         let mut all_tools = Vec::new();
 
         for frame_tools in st.tools.values() {
@@ -66,22 +69,31 @@ mod tests {
     use crate::chrome_mcp_handler::cdp_domains::webmcp::WebmcpTool;
     use serde_json::json;
 
+    fn make_tool(name: &str, frame_id: &str) -> WebmcpTool {
+        WebmcpTool {
+            name: name.into(),
+            description: "desc".into(),
+            input_schema: json!({}),
+            annotations: None,
+            frame_id: frame_id.into(),
+            backend_node_id: None,
+        }
+    }
+
+    fn extract_text(result: &CallToolResult) -> String {
+        let content_val = serde_json::to_value(&result.content).unwrap();
+        content_val[0]["text"].as_str().unwrap().to_string()
+    }
+
     #[tokio::test]
     async fn test_webmcp_list_tools_handle() {
         let handler = ChromeMcpHandler::new_test();
         {
             let mut st = handler.default_session.webmcp_state.lock().await;
-            st.tools.entry("frame-1".into()).or_default().insert(
-                "mockTool".into(),
-                WebmcpTool {
-                    name: "mockTool".into(),
-                    description: "desc".into(),
-                    input_schema: json!({}),
-                    annotations: None,
-                    frame_id: "frame-1".into(),
-                    backend_node_id: None,
-                },
-            );
+            st.tools
+                .entry("frame-1".into())
+                .or_default()
+                .insert("mockTool".into(), make_tool("mockTool", "frame-1"));
         }
 
         let params: CallToolRequestParams = serde_json::from_value(json!({
@@ -91,7 +103,108 @@ mod tests {
         .unwrap();
 
         let result = ListWebmcpToolsTool::handle(params, &handler).await.unwrap();
-        let text = format!("{:?}", result.content);
+        let text = extract_text(&result);
         assert!(text.contains("mockTool"));
+    }
+
+    #[tokio::test]
+    async fn test_list_tools_reads_tab_state_not_session_state() {
+        let handler = ChromeMcpHandler::new_test();
+        let session = handler.session(None).await.unwrap();
+
+        // Put a tool in the SESSION state (the fallback).
+        {
+            let mut st = session.webmcp_state.lock().await;
+            st.tools
+                .entry("frame-s".into())
+                .or_default()
+                .insert("sessionTool".into(), make_tool("sessionTool", "frame-s"));
+        }
+
+        // Register a tab and put a different tool in the TAB state.
+        let tab_state = {
+            use cdp_browser_lite::BrowserClient;
+            use std::time::Duration;
+
+            let port =
+                crate::chrome_mcp_handler::cdp_domains::tests::spawn_mock_chrome_server().await;
+            let browser =
+                BrowserClient::connect(&format!("127.0.0.1:{}", port), Duration::from_secs(5))
+                    .await
+                    .expect("BrowserClient connect to mock");
+            let tab = browser
+                .attach("T-page-1")
+                .await
+                .expect("attach to mock target");
+
+            let tab_id = {
+                let mut registry = session.tabs.write().unwrap();
+                registry
+                    .register_tab(tab, None, "https://example.test".into())
+                    .expect("register tab")
+            };
+
+            let state = session.webmcp_state(Some(tab_id.clone())).unwrap();
+            {
+                let mut st = state.lock().await;
+                st.tools
+                    .entry("frame-t".into())
+                    .or_default()
+                    .insert("tabTool".into(), make_tool("tabTool", "frame-t"));
+            }
+            (tab_id, state)
+        };
+        let (tab_id, _) = tab_state;
+
+        // Explicit tab_id: must return the TAB tool, not the session tool.
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "webmcp_list_tools",
+            "arguments": { "tab_id": tab_id }
+        }))
+        .unwrap();
+        let result = ListWebmcpToolsTool::handle(params, &handler).await.unwrap();
+        let text = extract_text(&result);
+        assert!(text.contains("tabTool"), "expected tab tool, got: {text}");
+        assert!(
+            !text.contains("sessionTool"),
+            "must not leak session state into tab result"
+        );
+
+        // Omitted tab_id (active tab = the registered tab): same result.
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "webmcp_list_tools",
+            "arguments": {}
+        }))
+        .unwrap();
+        let result = ListWebmcpToolsTool::handle(params, &handler).await.unwrap();
+        let text = extract_text(&result);
+        assert!(text.contains("tabTool"), "active-tab lookup failed: {text}");
+    }
+
+    #[tokio::test]
+    async fn test_list_tools_unknown_tab_id_errors() {
+        let handler = ChromeMcpHandler::new_test();
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "webmcp_list_tools",
+            "arguments": { "tab_id": "tab-nope" }
+        }))
+        .unwrap();
+        let err = ListWebmcpToolsTool::handle(params, &handler)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("not found"),
+            "expected tab-not-found error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_list_tools_schema_no_unknown_types() {
+        let schema = ListWebmcpToolsTool::json_schema();
+        let serialized = serde_json::to_string(&schema).unwrap();
+        assert!(
+            !serialized.contains("\"unknown\""),
+            "schema must not contain type=unknown: {serialized}"
+        );
     }
 }

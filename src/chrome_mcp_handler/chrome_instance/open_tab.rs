@@ -71,8 +71,6 @@ impl OpenTabTool {
                 })?
         };
 
-        cdp_domains::enable_tab_domains(&tab).await;
-
         let states = {
             let registry = session.tabs.read().unwrap();
             registry
@@ -82,6 +80,8 @@ impl OpenTabTool {
         };
 
         if let Some(states) = states {
+            let webmcp_state = states.4.clone();
+            cdp_domains::enable_tab_domains(&tab, &webmcp_state).await;
             let handles = cdp_domains::start_tab_listeners(&tab, states);
             session
                 .tabs

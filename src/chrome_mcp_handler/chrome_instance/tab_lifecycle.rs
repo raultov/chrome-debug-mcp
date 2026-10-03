@@ -65,8 +65,6 @@ async fn process_target_event(
                 if !already_exists {
                     // Attach to the tab
                     if let Ok(tab) = browser_client.attach(target_id).await {
-                        cdp_domains::enable_tab_domains(&tab).await;
-
                         let registered = {
                             let mut registry = tabs.write().unwrap();
                             if let Ok(tab_id) =
@@ -83,6 +81,8 @@ async fn process_target_event(
                         };
 
                         if let Some((tab_id, states)) = registered {
+                            let webmcp_state = states.4.clone();
+                            cdp_domains::enable_tab_domains(&tab, &webmcp_state).await;
                             let handles = cdp_domains::start_tab_listeners(&tab, states);
                             tabs.write().unwrap().attach_listeners(&tab_id, handles);
                         }

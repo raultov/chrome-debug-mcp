@@ -12,6 +12,8 @@ use rust_mcp_sdk::{
 pub struct InvokeWebmcpToolTool {
     /// Chrome instance id from open_instance/list_instances. Omit for the default instance.
     pub instance_id: Option<String>,
+    /// The Tab ID of the target tab. Omit to use the active tab.
+    pub tab_id: Option<String>,
     /// Target frame ID where the tool is registered. Constraints: must match a valid frame ID returned by webmcp_list_tools.
     #[serde(rename = "frameId")]
     pub frame_id: String,
@@ -64,10 +66,7 @@ impl InvokeWebmcpToolTool {
 
         let input_obj = parse_input_object(&tool.input)?;
 
-        let mut client_guard = session.get_or_connect().await?;
-        let client = client_guard.as_mut().ok_or_else(|| {
-            CallToolError::from_message("Chrome connection is not established".to_string())
-        })?;
+        let target = session.target(tool.tab_id.clone()).await?;
 
         let invoke_params = serde_json::json!({
             "frameId": tool.frame_id,
@@ -75,7 +74,7 @@ impl InvokeWebmcpToolTool {
             "input": input_obj
         });
 
-        let response = client
+        let response = target
             .send_raw_command("WebMCP.invokeTool", invoke_params)
             .await
             .map_err(|e| {
@@ -89,10 +88,8 @@ impl InvokeWebmcpToolTool {
             .ok_or_else(|| CallToolError::from_message("Did not receive invocationId".to_string()))?
             .to_string();
 
-        // Release client lock before waiting
-        drop(client_guard);
-
-        // Wait for the toolResponded event
+        // Wait for the toolResponded event in the same tab's state
+        let webmcp_state = session.webmcp_state(tool.tab_id.clone())?;
         let mut attempts = 0;
         loop {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -106,7 +103,7 @@ impl InvokeWebmcpToolTool {
                 )));
             }
 
-            let st = session.webmcp_state.lock().await;
+            let st = webmcp_state.lock().await;
             if let Some(invocation) = st.invocations.get(&invocation_id)
                 && let Some(status) = &invocation.status
             {
@@ -171,6 +168,132 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_webmcp_invoke_tool_tab_id_deserialization() {
+        let tool: InvokeWebmcpToolTool = serde_json::from_value(json!({
+            "tab_id": "tab-1",
+            "frameId": "frame-1",
+            "toolName": "myTool"
+        }))
+        .unwrap();
+        assert_eq!(tool.tab_id.as_deref(), Some("tab-1"));
+    }
+
+    #[tokio::test]
+    async fn test_webmcp_invoke_tool_tab_id_defaults_to_none() {
+        let tool: InvokeWebmcpToolTool = serde_json::from_value(json!({
+            "frameId": "frame-1",
+            "toolName": "myTool"
+        }))
+        .unwrap();
+        assert!(tool.tab_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_invoke_tool_unknown_tab_id_errors() {
+        let handler = ChromeMcpHandler::new_test();
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "webmcp_invoke_tool",
+            "arguments": {
+                "tab_id": "tab-nope",
+                "frameId": "frame-1",
+                "toolName": "myTool"
+            }
+        }))
+        .unwrap();
+        let err = InvokeWebmcpToolTool::handle(params, &handler)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("not found"),
+            "expected tab-not-found error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_invoke_tool_uses_tab_state_not_session_state() {
+        use crate::chrome_mcp_handler::cdp_domains::webmcp::WebmcpInvocation;
+        use std::time::Duration;
+
+        let handler = ChromeMcpHandler::new_test();
+        let session = handler.session(None).await.unwrap();
+
+        // Put a COMPLETED invocation in the SESSION state under a decoy id.
+        {
+            let mut st = session.webmcp_state.lock().await;
+            st.invocations.insert(
+                "decoy".into(),
+                WebmcpInvocation {
+                    tool_name: "myTool".into(),
+                    frame_id: "frame-1".into(),
+                    invocation_id: "decoy".into(),
+                    input: "{}".into(),
+                    status: Some("Completed".into()),
+                    output: Some(json!({"from": "session"})),
+                    error_text: None,
+                },
+            );
+        }
+
+        // Register a real tab.
+        let tab_id = {
+            use cdp_browser_lite::BrowserClient;
+            let port =
+                crate::chrome_mcp_handler::cdp_domains::tests::spawn_mock_chrome_server().await;
+            let browser =
+                BrowserClient::connect(&format!("127.0.0.1:{}", port), Duration::from_secs(5))
+                    .await
+                    .expect("BrowserClient connect to mock");
+            let tab = browser.attach("T-page-1").await.expect("attach to mock");
+
+            let mut registry = session.tabs.write().unwrap();
+            registry
+                .register_tab(tab, None, "https://example.test".into())
+                .expect("register tab")
+        };
+
+        // Put a COMPLETED invocation in the TAB state with a known id.
+        {
+            let state = session.webmcp_state(Some(tab_id.clone())).unwrap();
+            let mut st = state.lock().await;
+            st.invocations.insert(
+                "tab-inv".into(),
+                WebmcpInvocation {
+                    tool_name: "myTool".into(),
+                    frame_id: "frame-1".into(),
+                    invocation_id: "tab-inv".into(),
+                    input: "{}".into(),
+                    status: Some("Completed".into()),
+                    output: Some(json!({"from": "tab"})),
+                    error_text: None,
+                },
+            );
+        }
+
+        // The handle() will try to send WebMCP.invokeTool through the mock
+        // target; the mock returns {} so it fails with "Did not receive
+        // invocationId". The important assertion is that it did NOT fail with
+        // "Tab not found" (proving target(tab_id) and webmcp_state(tab_id) were
+        // both resolved to the registered tab).
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "webmcp_invoke_tool",
+            "arguments": {
+                "tab_id": tab_id,
+                "frameId": "frame-1",
+                "toolName": "myTool"
+            }
+        }))
+        .unwrap();
+        let err = InvokeWebmcpToolTool::handle(params, &handler)
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("not found"),
+            "tab_id should have resolved to the registered tab: {msg}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_webmcp_invoke_tool_input_defaults_to_empty_object() {
         let tool: InvokeWebmcpToolTool = serde_json::from_value(json!({
             "frameId": "frame-1",
@@ -201,5 +324,15 @@ mod tests {
         let input = props.get("input").unwrap();
         assert_eq!(input.get("type").and_then(|v| v.as_str()), Some("string"));
         assert_ne!(input.get("type").and_then(|v| v.as_str()), Some("unknown"));
+    }
+
+    #[test]
+    fn test_webmcp_invoke_tool_schema_no_unknown_types() {
+        let schema = InvokeWebmcpToolTool::json_schema();
+        let serialized = serde_json::to_string(&schema).unwrap();
+        assert!(
+            !serialized.contains("\"unknown\""),
+            "schema must not contain type=unknown: {serialized}"
+        );
     }
 }

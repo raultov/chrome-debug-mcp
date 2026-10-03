@@ -1,5 +1,7 @@
 use crate::chrome_mcp_handler::chrome_instance::tab_registry::TabDomainStates;
 use cdp_browser_lite::{NoParams, Tab};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub mod custom;
 pub mod debugger;
@@ -75,17 +77,25 @@ pub mod tracing;
 
 /// Enables the standard CDP domains on a per-tab session. Errors are ignored:
 /// a missing domain only degrades that capability, it must not fail the tab.
-pub(crate) async fn enable_tab_domains(tab: &Tab) {
+/// The `WebMCP.enable` result is recorded in `webmcp_state.availability`.
+pub(crate) async fn enable_tab_domains(tab: &Tab, webmcp_state: &Arc<Mutex<webmcp::WebmcpState>>) {
     for cmd in [
         "Runtime.enable",
         "Page.enable",
         "Network.enable",
         "Log.enable",
         "Debugger.enable",
-        "WebMCP.enable",
     ] {
         let _ = tab.send_raw_command(cmd, NoParams).await;
     }
+    let enable_res = tab.send_raw_command("WebMCP.enable", NoParams).await;
+    let availability = if enable_res.is_ok() {
+        webmcp::WebmcpAvailability::Enabled
+    } else {
+        webmcp::WebmcpAvailability::Unsupported
+    };
+    let mut st = webmcp_state.lock().await;
+    st.availability = availability;
 }
 
 /// Starts every per-tab domain listener on the tab's CDP target.
