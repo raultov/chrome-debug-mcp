@@ -173,13 +173,28 @@ pub(crate) fn start_webmcp_listener(
     target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
     state_clone: Arc<Mutex<WebmcpState>>,
 ) -> tokio::task::JoinHandle<()> {
-    crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener(
+    let nav_sync = WebmcpNavSync {
+        state: state_clone.clone(),
+        target: target.clone(),
+    };
+    crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener_with_recovery(
         target,
         "WebMCP",
-        move |event| {
+        {
             let state = state_clone.clone();
+            move |event| {
+                let state = state.clone();
+                async move {
+                    process_webmcp_event(&event, &state).await;
+                }
+            }
+        },
+        // A lag on this stream is what the tool cache cannot survive on its
+        // own: `toolsAdded` and `toolsRemoved` may both have been dropped.
+        move |_skipped| {
+            let nav_sync = nav_sync.clone();
             async move {
-                process_webmcp_event(&event, &state).await;
+                nav_sync.resync_after_lag().await;
             }
         },
     )

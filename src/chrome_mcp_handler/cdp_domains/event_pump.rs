@@ -1,7 +1,20 @@
-use cdp_browser_lite::{CdpResult, WsResponse};
+use cdp_browser_lite::{CdpError, CdpResult, WsResponse};
 use tokio_stream::{Stream, StreamExt};
 
 /// Drives a CDP event stream, invoking `process` for every event it yields.
+///
+/// Delegates to [`pump_events_with_recovery`] with a no-op lag recovery.
+pub(crate) async fn pump_events<S, F, Fut>(events: S, domain: &'static str, process: F)
+where
+    S: Stream<Item = CdpResult<WsResponse>> + Unpin,
+    F: FnMut(WsResponse) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    pump_events_with_recovery(events, domain, process, |_| async {}).await
+}
+
+/// Drives a CDP event stream, invoking `process` for every event it yields and
+/// `recover` whenever the channel reports a lag.
 ///
 /// The stream yields `Err` when the underlying broadcast channel lags behind:
 /// some events were dropped, but the stream itself stays usable. Treating that
@@ -9,17 +22,35 @@ use tokio_stream::{Stream, StreamExt};
 /// the domain's state cache for the rest of the session, so errors are reported
 /// and the loop continues. Only stream exhaustion ends it.
 ///
+/// `recover(skipped)` runs before the loop resumes. A lag drops an unknown mix
+/// of events, so a cache maintained by `process` cannot be patched
+/// incrementally — `recover` is where the listener rebuilds it from the source
+/// (for the WebMCP tool cache, by re-sending `WebMCP.enable`). Non-lag errors
+/// never trigger it: they must not wipe a cache that is still valid.
+///
 /// Reporting goes to stderr on purpose: stdout carries the MCP JSON-RPC
 /// protocol, and this crate pulls in no logging facade.
-pub(crate) async fn pump_events<S, F, Fut>(mut events: S, domain: &'static str, mut process: F)
-where
+pub(crate) async fn pump_events_with_recovery<S, F, Fut, R, RFut>(
+    mut events: S,
+    domain: &'static str,
+    mut process: F,
+    mut recover: R,
+) where
     S: Stream<Item = CdpResult<WsResponse>> + Unpin,
     F: FnMut(WsResponse) -> Fut,
     Fut: Future<Output = ()>,
+    R: FnMut(u64) -> RFut,
+    RFut: Future<Output = ()>,
 {
     while let Some(item) = events.next().await {
         match item {
             Ok(event) => process(event).await,
+            Err(CdpError::Lagged { skipped }) => {
+                eprintln!(
+                    "[chrome-debug-mcp] {domain} event stream lagged, dropped {skipped} events, resynchronising"
+                );
+                recover(skipped).await;
+            }
             Err(e) => {
                 eprintln!("[chrome-debug-mcp] {domain} event stream error, continuing: {e}");
             }
@@ -70,10 +101,42 @@ where
     F: Fn(WsResponse) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let events = target.on_domain(domain);
-    tokio::spawn(async move {
-        pump_events(events, domain, process).await;
+    spawn_pump(target, domain, move |events| {
+        pump_events(events, domain, process)
     })
+}
+
+/// Like [`spawn_domain_listener`], with a `recover` hook that runs whenever the
+/// domain's event stream lags. See [`pump_events_with_recovery`].
+pub(crate) fn spawn_domain_listener_with_recovery<F, Fut, R, RFut>(
+    target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
+    domain: &'static str,
+    process: F,
+    recover: R,
+) -> tokio::task::JoinHandle<()>
+where
+    F: Fn(WsResponse) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+    R: Fn(u64) -> RFut + Send + 'static,
+    RFut: Future<Output = ()> + Send + 'static,
+{
+    spawn_pump(target, domain, move |events| {
+        pump_events_with_recovery(events, domain, process, recover)
+    })
+}
+
+/// Subscribes to the domain's events and runs `drive` over the resulting
+/// stream on a background task. Shared by both `spawn_*` entry points so the
+/// subscription happens synchronously, before the caller can enable anything.
+fn spawn_pump<Fut>(
+    target: &crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
+    domain: &'static str,
+    drive: impl FnOnce(cdp_browser_lite::EventFilter) -> Fut + Send + 'static,
+) -> tokio::task::JoinHandle<()>
+where
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(drive(target.on_domain(domain)))
 }
 
 #[cfg(test)]
@@ -92,7 +155,12 @@ mod tests {
 
     /// Mirrors what `EventFilter` emits when the broadcast channel lags.
     fn lag() -> CdpError {
-        CdpError::InternalError("Event stream lagged: 3".to_string())
+        CdpError::Lagged { skipped: 3 }
+    }
+
+    /// Mirrors an error that has nothing to do with a lagging channel.
+    fn other_error() -> CdpError {
+        CdpError::Disconnected
     }
 
     async fn pump_and_collect(items: Vec<CdpResult<WsResponse>>) -> Vec<String> {
@@ -112,6 +180,35 @@ mod tests {
         )
         .await;
         seen.lock().await.clone()
+    }
+
+    /// Runs a stream through `pump_events_with_recovery`, recording what was
+    /// processed and which lag recoveries fired.
+    async fn pump_with_recovery(items: Vec<CdpResult<WsResponse>>) -> (Vec<String>, Vec<u64>) {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let recovered = Arc::new(Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        let sink_lag = recovered.clone();
+        pump_events_with_recovery(
+            tokio_stream::iter(items),
+            "Test",
+            move |event: WsResponse| {
+                let sink = sink.clone();
+                async move {
+                    sink.lock()
+                        .await
+                        .push(event.method.clone().unwrap_or_default());
+                }
+            },
+            move |skipped| {
+                let sink = sink_lag.clone();
+                async move {
+                    sink.lock().await.push(skipped);
+                }
+            },
+        )
+        .await;
+        (seen.lock().await.clone(), recovered.lock().await.clone())
     }
 
     #[tokio::test]
@@ -187,5 +284,83 @@ mod tests {
         let mut h2 = ListenerHandles::default();
         h2.absorb(h1);
         assert_eq!(h2.len(), 1);
+    }
+
+    // --- lag recovery contract ---
+
+    #[tokio::test]
+    async fn given_lagged_error_then_recovery_runs_with_the_dropped_count() {
+        let (seen, recovered) = pump_with_recovery(vec![
+            Ok(event("Network.requestWillBeSent")),
+            Err(lag()),
+            Ok(event("Network.responseReceived")),
+        ])
+        .await;
+
+        assert_eq!(
+            seen,
+            vec!["Network.requestWillBeSent", "Network.responseReceived"],
+            "processing must continue past a lag"
+        );
+        assert_eq!(
+            recovered,
+            vec![3],
+            "a lag must trigger exactly one recovery carrying the dropped count"
+        );
+    }
+
+    #[tokio::test]
+    async fn given_consecutive_lags_then_recovery_runs_once_per_lag() {
+        let (seen, recovered) =
+            pump_with_recovery(vec![Err(lag()), Err(lag()), Ok(event("Log.entryAdded"))]).await;
+
+        assert_eq!(seen, vec!["Log.entryAdded"]);
+        assert_eq!(
+            recovered,
+            vec![3, 3],
+            "each lag must be resynchronised independently: {recovered:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn given_non_lag_error_then_recovery_does_not_run() {
+        // A transport or protocol error says nothing about dropped events.
+        // Recovering there would wipe a cache that is still perfectly valid.
+        let (seen, recovered) = pump_with_recovery(vec![
+            Ok(event("Network.requestWillBeSent")),
+            Err(other_error()),
+            Ok(event("Network.responseReceived")),
+        ])
+        .await;
+
+        assert_eq!(
+            seen,
+            vec!["Network.requestWillBeSent", "Network.responseReceived"],
+            "a non-lag error must not stop the stream either"
+        );
+        assert!(
+            recovered.is_empty(),
+            "no lag means nothing to resynchronise, got: {recovered:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn given_all_ok_events_then_recovery_never_runs() {
+        let (seen, recovered) = pump_with_recovery(vec![
+            Ok(event("A.one")),
+            Ok(event("A.two")),
+            Ok(event("A.three")),
+        ])
+        .await;
+
+        assert_eq!(seen, vec!["A.one", "A.two", "A.three"]);
+        assert!(recovered.is_empty());
+    }
+
+    #[tokio::test]
+    async fn given_empty_stream_then_recovery_never_runs() {
+        let (seen, recovered) = pump_with_recovery(vec![]).await;
+        assert!(seen.is_empty());
+        assert!(recovered.is_empty());
     }
 }

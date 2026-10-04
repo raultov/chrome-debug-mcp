@@ -71,6 +71,24 @@ impl WebmcpNavSync {
                 .await;
         }
     }
+
+    /// Rebuilds the tool cache from scratch after the WebMCP event stream
+    /// reported a lag.
+    ///
+    /// A lag drops an unknown mix of `toolsAdded` and `toolsRemoved`, so the
+    /// cache cannot be repaired incrementally: any tool might be a ghost of a
+    /// document that died, or a live tool that never made it in. Clearing
+    /// everything and asking Chrome to replay is the only authoritative answer,
+    /// which is exactly what [`Self::purge_and_resync`] does.
+    ///
+    /// Unlike a navigation purge, this must not wait for the next
+    /// `frameNavigated`: the page may already be settled and no further
+    /// navigation will ever come. It is the last line of defence behind the
+    /// "subscribe before enabling" ordering in `open_tab`/`tab_lifecycle`,
+    /// which is what normally keeps the tool cache from going stale.
+    pub(crate) async fn resync_after_lag(&self) {
+        self.purge_and_resync(ToolCacheReset::AllFrames).await;
+    }
 }
 
 /// Classifies a `Page` domain event without touching any shared state.
@@ -119,7 +137,8 @@ pub(crate) fn start_page_listener(
     state_clone: Arc<Mutex<NetworkState>>,
     webmcp: Option<WebmcpNavSync>,
 ) -> tokio::task::JoinHandle<()> {
-    crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener(
+    let recovery = webmcp.clone();
+    crate::chrome_mcp_handler::cdp_domains::event_pump::spawn_domain_listener_with_recovery(
         target,
         "Page",
         move |event| {
@@ -129,6 +148,17 @@ pub(crate) fn start_page_listener(
                 process_page_event(&event, &state, webmcp.as_ref()).await;
             }
         },
+        // A lag here may have swallowed a `frameNavigated`, so the tool cache
+        // may have outlived the document that registered its entries. When
+        // WebMCP is wired up, rebuild it rather than trust the cache.
+        move |_skipped| {
+            let sync = recovery.clone();
+            async move {
+                if let Some(sync) = sync {
+                    sync.resync_after_lag().await;
+                }
+            }
+        },
     )
 }
 
@@ -136,7 +166,7 @@ pub(crate) fn start_page_listener(
 mod tests {
     use super::*;
     use crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget;
-    use crate::chrome_mcp_handler::cdp_domains::webmcp::WebmcpState;
+    use crate::chrome_mcp_handler::cdp_domains::webmcp::{WebmcpInvocation, WebmcpState};
     use serde_json::json;
 
     fn event(method: &str, params: serde_json::Value) -> WsResponse {
@@ -451,6 +481,194 @@ mod tests {
         assert!(
             st.tools["F1"].contains_key("freshTool"),
             "eventual consistency: post-navigation toolsAdded repopulates the cache"
+        );
+    }
+
+    // --- lag recovery: the tool cache must survive a dropped-event gap ---
+
+    /// Drives the WebMCP listener the way `start_webmcp_listener` wires it up:
+    /// events into `process_webmcp_event`, lags into `resync_after_lag`.
+    async fn pump_webmcp_with_recovery(
+        items: Vec<cdp_browser_lite::CdpResult<WsResponse>>,
+        sync: &WebmcpNavSync,
+    ) {
+        let state = sync.state.clone();
+        let recover = sync.clone();
+        crate::chrome_mcp_handler::cdp_domains::event_pump::pump_events_with_recovery(
+            tokio_stream::iter(items),
+            "WebMCP",
+            move |event: WsResponse| {
+                let state = state.clone();
+                async move {
+                    crate::chrome_mcp_handler::cdp_domains::webmcp::process_webmcp_event(
+                        &event, &state,
+                    )
+                    .await;
+                }
+            },
+            move |_skipped| {
+                let recover = recover.clone();
+                async move {
+                    recover.resync_after_lag().await;
+                }
+            },
+        )
+        .await;
+    }
+
+    fn lag(skipped: u64) -> cdp_browser_lite::CdpResult<WsResponse> {
+        Err(cdp_browser_lite::CdpError::Lagged { skipped })
+    }
+
+    fn tools_added(name: &str, frame: &str) -> cdp_browser_lite::CdpResult<WsResponse> {
+        Ok(event(
+            "WebMCP.toolsAdded",
+            json!({ "tools": [ { "name": name, "description": "d",
+                                  "inputSchema": {}, "frameId": frame } ] }),
+        ))
+    }
+
+    fn invocation(id: &str) -> WebmcpInvocation {
+        WebmcpInvocation {
+            tool_name: "toolA".to_string(),
+            frame_id: "F1".to_string(),
+            invocation_id: id.to_string(),
+            input: "{}".to_string(),
+            status: Some("Completed".to_string()),
+            output: None,
+            error_text: None,
+        }
+    }
+
+    /// The required recovery property: a simulated `Lagged` must leave the tool
+    /// cache consistent — ghosts gone, live tools present — instead of
+    /// silently keeping entries whose `toolsRemoved` were lost.
+    #[tokio::test]
+    async fn given_lagged_gap_then_tool_state_recovers() {
+        let sync = nav_sync_with(
+            Arc::new(Mutex::new(WebmcpState::default())),
+            mock_cdp_client().await,
+        );
+        {
+            let mut st = sync.state.lock().await;
+            seed_tools(&mut st);
+            st.availability = WebmcpAvailability::Enabled;
+            st.invocations
+                .insert("inv-1".to_string(), invocation("inv-1"));
+        }
+
+        // Three events were dropped: an unknown mix of adds and removes. Then
+        // the stream resumes with a tool the page registers now.
+        pump_webmcp_with_recovery(vec![lag(3), tools_added("freshTool", "F1")], &sync).await;
+
+        let st = sync.state.lock().await;
+        assert!(
+            !st.tools.values().any(|f| f.contains_key("toolA")),
+            "a ghost of the lost traffic must not survive: {:?}",
+            st.tools
+        );
+        assert!(
+            st.tools["F1"].contains_key("freshTool"),
+            "the tool registered after the lag must be visible: {:?}",
+            st.tools
+        );
+        assert_eq!(
+            st.invocations.len(),
+            1,
+            "invocations outlive a tool purge, they belong to calls already made"
+        );
+        assert_eq!(
+            st.availability,
+            WebmcpAvailability::Enabled,
+            "recovery must not consume availability"
+        );
+    }
+
+    /// Recovering on a transport error would wipe a cache that is still valid.
+    #[tokio::test]
+    async fn given_non_lag_error_then_tool_cache_is_left_alone() {
+        let sync = nav_sync_with(
+            Arc::new(Mutex::new(WebmcpState::default())),
+            mock_cdp_client().await,
+        );
+        {
+            let mut st = sync.state.lock().await;
+            seed_tools(&mut st);
+            st.availability = WebmcpAvailability::Enabled;
+        }
+
+        pump_webmcp_with_recovery(
+            vec![
+                Err(cdp_browser_lite::CdpError::Disconnected),
+                tools_added("freshTool", "F1"),
+            ],
+            &sync,
+        )
+        .await;
+
+        let st = sync.state.lock().await;
+        assert!(
+            st.tools["F1"].contains_key("toolA"),
+            "a non-lag error must not purge live tools: {:?}",
+            st.tools
+        );
+        assert!(st.tools["F1"].contains_key("freshTool"));
+    }
+
+    /// Even without WebMCP support the cache is untrustworthy after a lag, so
+    /// it is purged — but availability is never consumed by a purge.
+    #[tokio::test]
+    async fn given_lag_when_webmcp_unsupported_then_purged_but_availability_kept() {
+        let sync = nav_sync_with(
+            Arc::new(Mutex::new(WebmcpState::default())),
+            mock_cdp_client().await,
+        );
+        {
+            let mut st = sync.state.lock().await;
+            seed_tools(&mut st);
+            st.availability = WebmcpAvailability::Unsupported;
+        }
+
+        pump_webmcp_with_recovery(vec![lag(2)], &sync).await;
+
+        let st = sync.state.lock().await;
+        assert!(
+            st.tools.is_empty(),
+            "untrustworthy cache is dropped: {:?}",
+            st.tools
+        );
+        assert_eq!(
+            st.availability,
+            WebmcpAvailability::Unsupported,
+            "a purge never consumes availability, otherwise the next purge cannot decide"
+        );
+    }
+
+    /// `resync_after_lag` is the whole-tool-tree rebuild, and it must not
+    /// touch invocations the way a navigation purge does not either.
+    #[tokio::test]
+    async fn given_resync_after_lag_then_invocations_survive() {
+        let sync = nav_sync_with(
+            Arc::new(Mutex::new(WebmcpState::default())),
+            mock_cdp_client().await,
+        );
+        {
+            let mut st = sync.state.lock().await;
+            seed_tools(&mut st);
+            st.availability = WebmcpAvailability::Enabled;
+            st.invocations
+                .insert("inv-1".to_string(), invocation("inv-1"));
+        }
+
+        sync.resync_after_lag().await;
+
+        let st = sync.state.lock().await;
+        assert!(st.tools.is_empty(), "tools rebuilt from scratch");
+        assert_eq!(
+            st.invocations.len(),
+            1,
+            "a tool invocation is history, not cache: {:?}",
+            st.invocations
         );
     }
 }
