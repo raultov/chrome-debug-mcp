@@ -71,10 +71,13 @@ impl ProfilePagePerformanceTool {
                 .await;
         }
 
-        // 2. Prepare to listen for completion
+        // 2. Prepare to listen for completion — the completion channel lives in
+        // the tab's tracing state, matching where the tracing listener pumps
+        // Tracing.tracingComplete for that same tab.
         let (tx, mut rx) = mpsc::channel(1);
         {
-            let mut st = handler.default_session.tracing_state.lock().await;
+            let tracing_state = session.tracing_state(args.tab_id.clone())?;
+            let mut st = tracing_state.lock().await;
             st.completion_channel = Some(tx);
         }
 
@@ -319,5 +322,22 @@ mod tests {
         assert_eq!(summary.top_long_tasks.len(), 2);
         assert_eq!(summary.top_long_tasks[0].duration_ms, 200.0);
         assert_eq!(summary.top_long_tasks[1].duration_ms, 100.0);
+    }
+
+    #[tokio::test]
+    async fn test_profile_unknown_tab_fails_before_tracing_starts() {
+        let handler = ChromeMcpHandler::new_test();
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "profile_page_performance",
+            "arguments": { "duration_ms": 500, "tab_id": "tab-nope" }
+        }))
+        .unwrap();
+        let err = ProfilePagePerformanceTool::handle(params, &handler)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("not found"),
+            "expected tab-not-found error instead of a 10s tracing timeout, got: {err}"
+        );
     }
 }

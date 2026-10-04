@@ -54,7 +54,8 @@ impl SendCdpCommandTool {
 
         // Extract domain from method (e.g., "DOM" from "DOM.getDocument")
         if let Some(domain) = tool.method.split('.').next() {
-            super::ensure_domain_listener(&target, &session.custom_state, domain).await;
+            let custom_state = session.custom_state(tool.tab_id.clone())?;
+            super::ensure_domain_listener(&target, &custom_state, domain).await;
         }
 
         let response = target.send_raw_command(&tool.method, parsed_params).await;
@@ -178,6 +179,57 @@ mod tests {
             result_local.is_ok(),
             "Local navigation should succeed: {:?}",
             result_local.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_send_cdp_command_routes_custom_state_to_tab() {
+        let handler = ChromeMcpHandler::new_test();
+        let session = handler.session(None).await.unwrap();
+
+        // Register a real tab over the mock DevTools server so that
+        // session.target(tab_id) resolves to the tab's own CDP target.
+        let tab_id = {
+            use cdp_browser_lite::BrowserClient;
+            use std::time::Duration;
+
+            let port = spawn_mock_chrome_server().await;
+            let browser =
+                BrowserClient::connect(&format!("127.0.0.1:{}", port), Duration::from_secs(5))
+                    .await
+                    .expect("BrowserClient connect to mock");
+            let tab = browser.attach("T-page-1").await.expect("attach to mock");
+
+            session
+                .tabs
+                .write()
+                .unwrap()
+                .register_tab(tab, None, "https://example.test".into())
+                .expect("register tab")
+        };
+
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "send_cdp_command",
+            "arguments": {
+                "tab_id": tab_id,
+                "method": "DOM.getDocument",
+                "params": "{}"
+            }
+        }))
+        .unwrap();
+
+        let result = SendCdpCommandTool::handle(params, &handler).await;
+        assert!(result.is_ok(), "Handle should succeed: {:?}", result.err());
+
+        // The custom listener must live in the TAB's state, not the session's.
+        let tab_custom_state = session.custom_state(Some(tab_id)).unwrap();
+        assert!(
+            tab_custom_state.lock().await.active_domains.contains("DOM"),
+            "custom listener must be registered in the tab's CustomState"
+        );
+        assert!(
+            session.custom_state.lock().await.active_domains.is_empty(),
+            "session CustomState must stay untouched when a tab was targeted"
         );
     }
 }

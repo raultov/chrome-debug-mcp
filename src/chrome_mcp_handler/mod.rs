@@ -347,6 +347,10 @@ impl BrowserSession {
                     handles.push(cdp_domains::page::start_page_listener(
                         &target,
                         self.network_state.clone(),
+                        has_webmcp.then(|| cdp_domains::webmcp::WebmcpNavSync {
+                            state: self.webmcp_state.clone(),
+                            target: target.clone(),
+                        }),
                     ));
 
                     handles.absorb(cdp_domains::log::start_log_listener(
@@ -489,10 +493,6 @@ impl BrowserSession {
         Ok(fallback_extractor(self))
     }
 
-    #[expect(
-        dead_code,
-        reason = "Debugger state retrieval wired to tools starting in Phase 5 E2E"
-    )]
     pub(crate) fn debugger_state(
         &self,
         tab_id: Option<String>,
@@ -526,10 +526,6 @@ impl BrowserSession {
         )
     }
 
-    #[expect(
-        dead_code,
-        reason = "Tracing state retrieval wired to tools starting in Phase 5 E2E"
-    )]
     pub(crate) fn tracing_state(
         &self,
         tab_id: Option<String>,

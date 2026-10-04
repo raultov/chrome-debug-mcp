@@ -28,29 +28,22 @@ impl EvaluateOnCallFrameTool {
         let args: EvaluateOnCallFrameTool = serde_json::from_value(args_value)
             .map_err(|e| CallToolError::from_message(e.to_string()))?;
         let session = handler.session(args.instance_id.clone()).await?;
+        let debugger_state = session.debugger_state(args.tab_id.clone())?;
 
-        // Validation: check if we have a paused call frame ID FIRST
-        {
-            let st = session.debugger_state.lock().await;
-            if st.paused_call_frame_id.is_none() {
-                return Err(CallToolError::from_message(
-                    "No active call frame ID stored in debugger state.",
-                ));
-            }
-        }
+        // Validation: check if we have a paused call frame ID FIRST. Reading
+        // the per-tab state needs no connection, so this stays cheap.
+        let call_frame_id = debugger_state
+            .lock()
+            .await
+            .paused_call_frame_id
+            .clone()
+            .ok_or_else(|| {
+                CallToolError::from_message(
+                    "No active call frame ID stored in debugger state.".to_string(),
+                )
+            })?;
 
         let target = session.target(args.tab_id.clone()).await?;
-
-        let call_frame_id = {
-            let state = session.debugger_state.lock().await;
-            state.paused_call_frame_id.clone()
-        };
-
-        let call_frame_id = call_frame_id.ok_or_else(|| {
-            CallToolError::from_message(
-                "No active call frame ID stored. Ensure debugger is paused.".to_string(),
-            )
-        })?;
 
         let expression_result = target
             .send_raw_command(
@@ -90,5 +83,74 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("No active call frame ID stored"));
+    }
+
+    /// Registers a real tab over the mock DevTools server so that explicit
+    /// `tab_id` resolution routes state reads to the tab entry.
+    async fn register_mock_tab(handler: &crate::chrome_mcp_handler::ChromeMcpHandler) -> String {
+        use cdp_browser_lite::BrowserClient;
+        use std::time::Duration;
+
+        let session = handler.session(None).await.expect("default session");
+        let port = crate::chrome_mcp_handler::cdp_domains::tests::spawn_mock_chrome_server().await;
+        let browser =
+            BrowserClient::connect(&format!("127.0.0.1:{}", port), Duration::from_secs(5))
+                .await
+                .expect("BrowserClient connect to mock");
+        let tab = browser.attach("T-page-1").await.expect("attach to mock");
+        session
+            .tabs
+            .write()
+            .unwrap()
+            .register_tab(tab, None, "https://example.test".into())
+            .expect("register tab")
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_on_call_frame_reads_tab_state_not_session_state() {
+        let handler = ChromeMcpHandler::new_test();
+        let session = handler.session(None).await.unwrap();
+
+        // Paused frame only in the SESSION state (would satisfy the old code).
+        session
+            .debugger_state(None)
+            .unwrap()
+            .lock()
+            .await
+            .paused_call_frame_id = Some("SESSION-CF".to_string());
+
+        // Tab registered but its debugger state has NO paused frame.
+        let tab_id = register_mock_tab(&handler).await;
+
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "evaluate_on_call_frame",
+            "arguments": { "expression": "1 + 1", "tab_id": tab_id }
+        }))
+        .unwrap();
+
+        let err = EvaluateOnCallFrameTool::handle(params, &handler)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("No active call frame ID stored"),
+            "must read the TAB state (which has no paused frame), got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_on_call_frame_unknown_tab_errors() {
+        let handler = ChromeMcpHandler::new_test();
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "evaluate_on_call_frame",
+            "arguments": { "expression": "1 + 1", "tab_id": "tab-nope" }
+        }))
+        .unwrap();
+        let err = EvaluateOnCallFrameTool::handle(params, &handler)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("not found"),
+            "expected tab-not-found error, got: {err}"
+        );
     }
 }
