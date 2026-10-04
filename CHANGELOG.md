@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.6] - 2026-10-04
+### Fixes
+- **Eliminated false `--enable-webmcp` warning in `webmcp_list_tools`:** Added an explicit `WebmcpAvailability::Pending` variant to distinguish between "WebMCP was not requested at server startup" (`NotRequested`) and "WebMCP is requested/enabled but `WebMCP.enable` response or page tools are still pending" (`Pending`). Newly registered tabs and sessions now initialize `WebmcpAvailability` to `Pending` when `--enable-webmcp` is active.
+- **Improved diagnostic messages in `webmcp_list_tools`:**
+  - `Pending`: returns `"[Note] No tools registered yet: WebMCP is being enabled on this tab and the page may still be loading. Retry webmcp_list_tools in a moment."`
+  - `Enabled` (empty tool list): replaced specific `knot.kz` URL recommendation with generic, actionable guidance: `"[Note] WebMCP is active, but this page has not registered any tools yet. Pages often register tools shortly after load or after client-side navigation: retry in a moment. If it stays empty, the page may not expose WebMCP tools."`
+
 ## [1.5.5] - 2026-10-04
 ### Fixes
 - **WebMCP tools now surface in `webmcp_list_tools` within milliseconds of `WebMCP.toolsAdded`, instead of 2-17 seconds later or never:** `open_tab` and the tab-lifecycle listener enabled the CDP domains *before* starting the per-tab event listeners. Enabling is exactly what makes Chrome emit its authoritative replay — `WebMCP.enable` re-emits the whole `toolsAdded` list, `Debugger.enable` replays `scriptParsed`, and so on — and `tokio::sync::broadcast` delivers nothing retroactively, so every one of those events went to zero subscribers and was dropped permanently. Nothing retriggers the replay once the page is already loaded, which is why the cache stayed empty until the next navigation happened to purge-and-resync it (the observed 2-17 s spread is just "whenever that navigation came"). Ordering is now subscribe → attach handles → enable, in both `open_tab` and `tab_lifecycle`. Measured on Chrome 153 against https://www.knot.kz/: `webmcp_list_tools` reflects a new tool in 1-491 ms after `open_tab` returns and 42-89 ms after a same-document `#/contact` navigation (6/6 rounds), against a hard 25 s timeout before the fix. As a side effect the listeners also now capture the `Runtime`/`Debugger` replay (`scriptParsed`, `executionContextCreated`), so those caches are more complete than before.
