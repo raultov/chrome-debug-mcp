@@ -170,9 +170,9 @@ dependencies = [
 
 [[package]]
 name = "cdp-browser-lite"
-version = "0.3.5"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c23ba987ea695af1de0aa5100ea3512801245f8e19839f990da0a128766e979"
+checksum = "2fb9e877f74d25d6224e6c8b5e0818b9b7bb92640d7ea69606f4c3186262495b"
 dependencies = [
  "cdp-lite",
  "futures-util",
@@ -187,9 +187,9 @@ dependencies = [
 
 [[package]]
 name = "cdp-lite"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "048d8404c7a961bb412355a7cdb82a5d94b1ee1f77d9276831e7fefb1df04382"
+checksum = "8a385c1cb889451b0aac6269880848f42c931a0bfb2b0bed5e2d827958976ee8"
 dependencies = [
  "futures-util",
  "log",
@@ -229,7 +229,7 @@ dependencies = [
 
 [[package]]
 name = "chrome-debug-mcp"
-version = "1.5.4"
+version = "1.5.5"
 dependencies = [
  "anyhow",
  "async-trait",
