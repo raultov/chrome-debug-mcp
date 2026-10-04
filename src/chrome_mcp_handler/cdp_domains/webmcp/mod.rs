@@ -13,6 +13,18 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// Everything the `Page` listener needs to keep the per-tab WebMCP tool cache
+/// aligned across navigations: the owning tab's `WebmcpState` and a live
+/// handle to that same tab's CDP target for the enable-based resync.
+///
+/// `None` wiring means "no WebMCP for this session or tab": the page listener
+/// then skips every purge/resync step for its events.
+#[derive(Clone)]
+pub(crate) struct WebmcpNavSync {
+    pub(crate) state: Arc<Mutex<WebmcpState>>,
+    pub(crate) target: crate::chrome_mcp_handler::cdp_domains::cdp_target::CdpTarget,
+}
+
 #[derive(Clone, Debug, ::serde::Serialize, ::serde::Deserialize)]
 pub struct WebmcpAnnotation {
     #[serde(rename = "readOnly", skip_serializing_if = "Option::is_none")]
@@ -68,6 +80,28 @@ pub struct WebmcpState {
     pub invocations: HashMap<String, WebmcpInvocation>,
     // Tracks current availability of the WebMCP feature
     pub availability: WebmcpAvailability,
+}
+
+impl WebmcpState {
+    /// Drops every cached tool registered by `frame_id`.
+    ///
+    /// Other frames' tools, invocations and availability are untouched.
+    /// Invocations must survive document swaps: a page tool whose `execute`
+    /// reloads the page still emits `toolResponded` afterwards, and
+    /// `webmcp_get_invocation` must keep working.
+    pub(crate) fn clear_frame_tools(&mut self, frame_id: &str) {
+        self.tools.remove(frame_id);
+    }
+
+    /// Drops every cached tool across all frames.
+    ///
+    /// A cross-document navigation of the main frame destroys the whole frame
+    /// tree; child frames get fresh frame IDs, so a single-frame purge would
+    /// leave stale iframe tools behind. Invocations survive for the same
+    /// reason as in [`Self::clear_frame_tools`].
+    pub(crate) fn clear_all_tools(&mut self) {
+        self.tools.clear();
+    }
 }
 
 pub(crate) async fn process_webmcp_event(event: &WsResponse, state: &Arc<Mutex<WebmcpState>>) {
@@ -255,5 +289,71 @@ mod tests {
                 Some(42)
             );
         }
+    }
+
+    fn seed_tools(st: &mut WebmcpState) {
+        for (name, frame) in [
+            ("toolA", "frame-main"),
+            ("toolI1", "frame-iframe"),
+            ("toolI2", "frame-iframe"),
+        ] {
+            st.tools.entry(frame.to_string()).or_default().insert(
+                name.to_string(),
+                WebmcpTool {
+                    name: name.to_string(),
+                    description: "d".into(),
+                    input_schema: json!({}),
+                    annotations: None,
+                    frame_id: frame.to_string(),
+                    backend_node_id: None,
+                },
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn given_clear_frame_tools_then_only_that_frame_is_dropped() {
+        let mut st = WebmcpState::default();
+        seed_tools(&mut st);
+
+        st.clear_frame_tools("frame-iframe");
+
+        assert!(!st.tools.contains_key("frame-iframe"), "iframe purged");
+        assert!(
+            st.tools.contains_key("frame-main"),
+            "main frame tools must survive a child-frame purge"
+        );
+    }
+
+    #[tokio::test]
+    async fn given_clear_all_tools_then_tools_go_and_invocations_stay() {
+        let mut st = WebmcpState::default();
+        seed_tools(&mut st);
+        st.availability = WebmcpAvailability::Enabled;
+        st.invocations.insert(
+            "inv-1".to_string(),
+            WebmcpInvocation {
+                tool_name: "toolA".to_string(),
+                frame_id: "frame-main".to_string(),
+                invocation_id: "inv-1".to_string(),
+                input: "{}".to_string(),
+                status: Some("Completed".to_string()),
+                output: None,
+                error_text: None,
+            },
+        );
+
+        st.clear_all_tools();
+
+        assert!(st.tools.is_empty(), "all tools purged");
+        assert!(
+            !st.invocations.is_empty(),
+            "invocations must survive navigation"
+        );
+        assert_eq!(
+            st.availability,
+            WebmcpAvailability::Enabled,
+            "availability is not touched by a purge"
+        );
     }
 }

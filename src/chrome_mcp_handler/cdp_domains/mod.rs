@@ -108,7 +108,14 @@ pub(crate) fn start_tab_listeners(
     let (dbg, net, log, trace, webmcp) = states;
     handles.push(debugger::start_debugger_listener(&target, dbg));
     handles.push(network::start_network_listener(&target, net.clone()));
-    handles.push(page::start_page_listener(&target, net));
+    handles.push(page::start_page_listener(
+        &target,
+        net,
+        Some(webmcp::WebmcpNavSync {
+            state: webmcp.clone(),
+            target: target.clone(),
+        }),
+    ));
     handles.absorb(log::start_log_listener(&target, log));
     handles.push(tracing::start_tracing_listener(&target, trace));
     handles.push(webmcp::start_webmcp_listener(&target, webmcp));
