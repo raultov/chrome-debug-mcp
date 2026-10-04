@@ -47,7 +47,7 @@ This server natively implements a suite of tools categorized by CDP domains and 
 * **Instance Registry Tools**: Use `open_instance`, `list_instances`, and `close_instance` to create, audit, and clean up additional instances. All existing tools accept an optional `instance_id` to route commands to the targeted browser.
 * **Multi-Tab Support (New)**: Controls multiple concurrent tabs within a single Chrome instance, multiplexing the event streams and commands over a single WebSocket connection.
   * **Auto-Discovery**: Popups opened by target pages (e.g. `window.open()`) are automatically discovered, attached, and registered in the session's tab registry.
-  * **Cache Isolation**: State caches (console messages, network traffic, debugger parsed scripts, WebMCP tools) are strictly isolated per tab so events do not bleed across targets.
+  * **Cache Isolation**: State caches (console messages, network traffic, debugger parsed scripts, WebMCP tools and invocations, custom CDP events, tracing completion channels) are strictly isolated per tab so events do not bleed across targets.
 * **Tab Registry Tools (New)**:
   * `open_tab` — Opens a new tab, optionally with a custom label and target URL. Returns JSON with the `tab_id` to reuse in other tools.
   * `list_tabs` — Lists all open and registered tabs for the instance as JSON (`tab_id`, `label`, `target_id`, `url`) plus the currently active tab. When no tabs are registered, tools fall back to the instance's default single-tab connection.
@@ -118,7 +118,7 @@ This server natively implements a suite of tools categorized by CDP domains and 
 
 **🧩 WebMCP (page-exposed tools)**
 Requires launching the server with `--enable-webmcp` to expose tools (`webmcp_*`) and enable Chromium feature switches (`--enable-features=WebMCPTesting,DevToolsWebMCPSupport`). All WebMCP tools accept an optional `tab_id` to target a specific tab (omit to use the active tab).
-* `webmcp_list_tools`: Lists the tools the current page exposes to the browser (name, description, `inputSchema`, `frameId`).
+* `webmcp_list_tools`: Lists the tools the current page exposes to the browser (name, description, `inputSchema`, `frameId`). After every cross-document navigation the tab's tool cache is purged and re-synced via `WebMCP.enable`, so the output keeps matching `document.modelContext.getTools()`; same-document (hash/history) navigations keep the cache.
 * `webmcp_invoke_tool`: Invokes a page tool by name. `input` is a **JSON object string** (e.g. `"{}"` or `"{\"product\":\"knot\"}"`), matching the tool's `inputSchema`. Blocks up to 30s waiting for the result.
 * `webmcp_get_invocation`: Returns the status (`Pending`/`Completed`/`Error`/`Canceled`) and result of an invocation by `invocationId` — non-blocking.
 * `webmcp_list_invocations`: Lists all invocations in the session with their status, with optional `status` filter.
