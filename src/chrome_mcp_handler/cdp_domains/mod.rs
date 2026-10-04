@@ -68,6 +68,29 @@ pub(crate) mod tests {
             assert!(res.is_ok(), "Command {} failed: {:?}", i, res.err());
         }
     }
+
+    #[tokio::test]
+    async fn given_enable_tab_domains_when_webmcp_enable_succeeds_then_availability_is_enabled() {
+        use cdp_browser_lite::BrowserClient;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        let port = spawn_mock_chrome_server().await;
+        let addr = format!("127.0.0.1:{}", port);
+        let browser = BrowserClient::connect(&addr, Duration::from_secs(2))
+            .await
+            .expect("BrowserClient connect");
+        let tab = browser.attach("T-tab-1").await.expect("attach tab");
+        let webmcp_state = Arc::new(Mutex::new(super::webmcp::WebmcpState {
+            availability: super::webmcp::WebmcpAvailability::Pending,
+            ..Default::default()
+        }));
+
+        super::enable_tab_domains(&tab, &webmcp_state).await;
+
+        let st = webmcp_state.lock().await;
+        assert_eq!(st.availability, super::webmcp::WebmcpAvailability::Enabled);
+    }
 }
 pub(crate) mod cdp_target;
 pub(crate) mod event_pump;

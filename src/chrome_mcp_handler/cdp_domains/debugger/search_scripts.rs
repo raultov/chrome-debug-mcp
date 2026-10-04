@@ -238,7 +238,7 @@ mod tests {
             .tabs
             .write()
             .unwrap()
-            .register_tab(tab, None, "https://example.test".into())
+            .register_tab(tab, None, "https://example.test".into(), false)
             .expect("register tab")
     }
 

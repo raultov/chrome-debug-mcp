@@ -62,7 +62,12 @@ impl OpenTabTool {
         let tab_id = {
             let mut registry = session.tabs.write().unwrap();
             registry
-                .register_tab(tab.clone(), args.label.clone(), url.clone())
+                .register_tab(
+                    tab.clone(),
+                    args.label.clone(),
+                    url.clone(),
+                    session.enable_webmcp,
+                )
                 .map_err(|e| {
                     CallToolError::from_message(format!(
                         "Failed to register tab in registry: {}",

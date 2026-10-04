@@ -1,7 +1,7 @@
 use crate::chrome_mcp_handler::cdp_domains::event_pump::ListenerHandles;
 use crate::chrome_mcp_handler::cdp_domains::log::LogState;
 use crate::chrome_mcp_handler::cdp_domains::tracing::TracingState;
-use crate::chrome_mcp_handler::cdp_domains::webmcp::WebmcpState;
+use crate::chrome_mcp_handler::cdp_domains::webmcp::{WebmcpAvailability, WebmcpState};
 use crate::chrome_mcp_handler::{CustomState, DebuggerState, NetworkState};
 use cdp_browser_lite::Tab;
 use std::collections::HashMap;
@@ -66,6 +66,7 @@ impl TabRegistry {
         tab: Tab,
         label: Option<String>,
         url: String,
+        enable_webmcp: bool,
     ) -> Result<TabId, String> {
         if self.tabs.len() >= self.max_tabs {
             return Err(format!("Tab limit reached ({})", self.max_tabs));
@@ -82,6 +83,11 @@ impl TabRegistry {
         let tab_id = format!("tab-{}", self.counter);
         self.counter += 1;
 
+        let webmcp_st = WebmcpState {
+            availability: WebmcpAvailability::initial(enable_webmcp),
+            ..Default::default()
+        };
+
         let entry = TabEntry {
             tab,
             label,
@@ -91,7 +97,7 @@ impl TabRegistry {
             log_state: Arc::new(Mutex::new(LogState::default())),
             tracing_state: Arc::new(Mutex::new(TracingState::default())),
             custom_state: Arc::new(Mutex::new(CustomState::default())),
-            webmcp_state: Arc::new(Mutex::new(WebmcpState::default())),
+            webmcp_state: Arc::new(Mutex::new(webmcp_st)),
             listeners: None,
         };
 

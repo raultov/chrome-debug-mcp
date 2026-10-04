@@ -381,6 +381,7 @@ impl BrowserSession {
                             chrome_instance::tab_lifecycle::start_tab_lifecycle_listener(
                                 browser_client,
                                 self.tabs.clone(),
+                                self.enable_webmcp,
                             ),
                         );
                     }
@@ -678,6 +679,10 @@ impl ChromeMcpHandler {
             params.clone(),
             Box::new(chrome_instance::cdp_browser_manager::RealLauncher { pool: pool.clone() }),
         );
+        let webmcp_st = cdp_domains::webmcp::WebmcpState {
+            availability: cdp_domains::webmcp::WebmcpAvailability::initial(options.enable_webmcp),
+            ..Default::default()
+        };
         let session = Arc::new(BrowserSession {
             client: Arc::new(Mutex::new(None)),
             debugger_state: Arc::new(Mutex::new(DebuggerState::default())),
@@ -685,7 +690,7 @@ impl ChromeMcpHandler {
             log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
             tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
             custom_state: Arc::new(Mutex::new(CustomState::default())),
-            webmcp_state: Arc::new(Mutex::new(cdp_domains::webmcp::WebmcpState::default())),
+            webmcp_state: Arc::new(Mutex::new(webmcp_st)),
             chrome_manager: Arc::new(Mutex::new(manager)),
             tabs: Arc::new(std::sync::RwLock::new(
                 chrome_instance::tab_registry::TabRegistry::new(16),
@@ -755,7 +760,10 @@ impl ChromeMcpHandler {
             log_state: Arc::new(Mutex::new(cdp_domains::log::LogState::default())),
             tracing_state: Arc::new(Mutex::new(cdp_domains::tracing::TracingState::default())),
             custom_state: Arc::new(Mutex::new(CustomState::default())),
-            webmcp_state: Arc::new(Mutex::new(cdp_domains::webmcp::WebmcpState::default())),
+            webmcp_state: Arc::new(Mutex::new(cdp_domains::webmcp::WebmcpState {
+                availability: cdp_domains::webmcp::WebmcpAvailability::initial(false),
+                ..Default::default()
+            })),
             chrome_manager: Arc::new(Mutex::new(chrome_instance::MockChromeManager::new(port))),
             tabs: Arc::new(std::sync::RwLock::new(
                 chrome_instance::tab_registry::TabRegistry::new(16),

@@ -68,8 +68,20 @@ pub struct WebmcpInvocation {
 pub enum WebmcpAvailability {
     #[default]
     NotRequested,
+    Pending,
     Unsupported,
     Enabled,
+}
+
+impl WebmcpAvailability {
+    /// Returns initial availability based on whether WebMCP is enabled on the server/session.
+    pub fn initial(enable_webmcp: bool) -> Self {
+        if enable_webmcp {
+            Self::Pending
+        } else {
+            Self::NotRequested
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone)]

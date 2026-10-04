@@ -247,7 +247,7 @@ mod tests {
 
             let mut registry = session.tabs.write().unwrap();
             registry
-                .register_tab(tab, None, "https://example.test".into())
+                .register_tab(tab, None, "https://example.test".into(), false)
                 .expect("register tab")
         };
 

@@ -7,6 +7,7 @@ use tokio_stream::StreamExt;
 pub(crate) fn start_tab_lifecycle_listener(
     browser_client: BrowserClient,
     tabs: Arc<RwLock<TabRegistry>>,
+    enable_webmcp: bool,
 ) -> tokio::task::JoinHandle<()> {
     let mut target_events = browser_client.client().on_domain("Target");
     let bc = browser_client.clone();
@@ -19,7 +20,7 @@ pub(crate) fn start_tab_lifecycle_listener(
         while let Some(item) = target_events.next().await {
             match item {
                 Ok(event) => {
-                    let _ = process_target_event(&event, &bc, &tabs_clone).await;
+                    let _ = process_target_event(&event, &bc, &tabs_clone, enable_webmcp).await;
                 }
                 Err(e) => {
                     eprintln!("[chrome-debug-mcp] Target lifecycle event stream error: {e}");
@@ -33,6 +34,7 @@ async fn process_target_event(
     event: &WsResponse,
     browser_client: &BrowserClient,
     tabs: &Arc<RwLock<TabRegistry>>,
+    enable_webmcp: bool,
 ) -> CdpResult<()> {
     let method = match event.method.as_deref() {
         Some(m) => m,
@@ -67,9 +69,12 @@ async fn process_target_event(
                     if let Ok(tab) = browser_client.attach(target_id).await {
                         let registered = {
                             let mut registry = tabs.write().unwrap();
-                            if let Ok(tab_id) =
-                                registry.register_tab(tab.clone(), None, url.to_string())
-                            {
+                            if let Ok(tab_id) = registry.register_tab(
+                                tab.clone(),
+                                None,
+                                url.to_string(),
+                                enable_webmcp,
+                            ) {
                                 let states = registry
                                     .tabs
                                     .get(&tab_id)

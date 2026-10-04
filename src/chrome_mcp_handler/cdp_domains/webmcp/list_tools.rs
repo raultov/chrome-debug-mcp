@@ -49,11 +49,14 @@ impl ListWebmcpToolsTool {
                 WebmcpAvailability::NotRequested => {
                     "\n\n[Warning] No tools registered. WebMCP testing features are not active. Make sure the server was started with --enable-webmcp."
                 }
+                WebmcpAvailability::Pending => {
+                    "\n\n[Note] No tools registered yet: WebMCP is being enabled on this tab and the page may still be loading. Retry webmcp_list_tools in a moment."
+                }
                 WebmcpAvailability::Unsupported => {
                     "\n\n[Warning] No tools registered. WebMCP was enabled via --enable-webmcp, but this Chrome instance does not support or expose the WebMCP CDP domain."
                 }
                 WebmcpAvailability::Enabled => {
-                    "\n\n[Note] WebMCP is active, but the current web page has not registered any tools yet. Make sure you have navigated to a WebMCP-capable page (like https://www.knot.kz/#/agent-tools) and the page has finished loading (try reloading)."
+                    "\n\n[Note] WebMCP is active, but this page has not registered any tools yet. Pages often register tools shortly after load or after client-side navigation: retry in a moment. If it stays empty, the page may not expose WebMCP tools."
                 }
             };
             content_list.push(warn_text.to_string().into());
@@ -66,7 +69,7 @@ impl ListWebmcpToolsTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chrome_mcp_handler::cdp_domains::webmcp::WebmcpTool;
+    use crate::chrome_mcp_handler::cdp_domains::webmcp::{WebmcpState, WebmcpTool};
     use serde_json::json;
 
     fn make_tool(name: &str, frame_id: &str) -> WebmcpTool {
@@ -140,7 +143,7 @@ mod tests {
             let tab_id = {
                 let mut registry = session.tabs.write().unwrap();
                 registry
-                    .register_tab(tab, None, "https://example.test".into())
+                    .register_tab(tab, None, "https://example.test".into(), false)
                     .expect("register tab")
             };
 
@@ -205,6 +208,95 @@ mod tests {
         assert!(
             !serialized.contains("\"unknown\""),
             "schema must not contain type=unknown: {serialized}"
+        );
+    }
+
+    #[tokio::test]
+    async fn given_fresh_state_with_enable_webmcp_when_list_tools_then_returns_pending_warning() {
+        // Given: state newly created with enable_webmcp = true (Pending availability)
+        let st = WebmcpState {
+            availability: WebmcpAvailability::initial(true),
+            ..Default::default()
+        };
+        let handler = ChromeMcpHandler::new_test();
+        *handler.default_session.webmcp_state.lock().await = st;
+
+        // When: calling webmcp_list_tools
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "webmcp_list_tools",
+            "arguments": {}
+        }))
+        .unwrap();
+        let result = ListWebmcpToolsTool::handle(params, &handler).await.unwrap();
+
+        // Then: message contains "retry" and DOES NOT contain "--enable-webmcp"
+        let content_val = serde_json::to_value(&result.content).unwrap();
+        let warn_text = content_val[1]["text"].as_str().unwrap();
+        assert!(
+            warn_text.to_lowercase().contains("retry"),
+            "expected retry in pending message, got: {warn_text}"
+        );
+        assert!(
+            !warn_text.contains("--enable-webmcp"),
+            "pending warning must not suggest server misconfiguration (--enable-webmcp): {warn_text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn given_flag_inactive_when_list_tools_then_returns_not_requested_warning() {
+        // Given: state created with enable_webmcp = false (NotRequested availability)
+        let st = WebmcpState {
+            availability: WebmcpAvailability::initial(false),
+            ..Default::default()
+        };
+        let handler = ChromeMcpHandler::new_test();
+        *handler.default_session.webmcp_state.lock().await = st;
+
+        // When: calling webmcp_list_tools
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "webmcp_list_tools",
+            "arguments": {}
+        }))
+        .unwrap();
+        let result = ListWebmcpToolsTool::handle(params, &handler).await.unwrap();
+
+        // Then: message mentions --enable-webmcp
+        let content_val = serde_json::to_value(&result.content).unwrap();
+        let warn_text = content_val[1]["text"].as_str().unwrap();
+        assert!(
+            warn_text.contains("--enable-webmcp"),
+            "expected --enable-webmcp in NotRequested message, got: {warn_text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn given_enabled_state_with_no_tools_when_list_tools_then_returns_generic_active_note() {
+        // Given: WebMCP enabled availability with empty tools
+        let st = WebmcpState {
+            availability: WebmcpAvailability::Enabled,
+            ..Default::default()
+        };
+        let handler = ChromeMcpHandler::new_test();
+        *handler.default_session.webmcp_state.lock().await = st;
+
+        // When: calling webmcp_list_tools
+        let params: CallToolRequestParams = serde_json::from_value(json!({
+            "name": "webmcp_list_tools",
+            "arguments": {}
+        }))
+        .unwrap();
+        let result = ListWebmcpToolsTool::handle(params, &handler).await.unwrap();
+
+        // Then: message is generic active note and does not contain knot.kz URL
+        let content_val = serde_json::to_value(&result.content).unwrap();
+        let warn_text = content_val[1]["text"].as_str().unwrap();
+        assert!(
+            warn_text.contains("WebMCP is active, but this page has not registered any tools yet"),
+            "expected generic active note, got: {warn_text}"
+        );
+        assert!(
+            !warn_text.contains("knot.kz"),
+            "warning message must not reference hardcoded URL knot.kz: {warn_text}"
         );
     }
 }
