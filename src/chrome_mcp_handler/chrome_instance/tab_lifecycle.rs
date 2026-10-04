@@ -82,9 +82,14 @@ async fn process_target_event(
 
                         if let Some((tab_id, states)) = registered {
                             let webmcp_state = states.4.clone();
-                            cdp_domains::enable_tab_domains(&tab, &webmcp_state).await;
+                            // Same ordering rule as `open_tab`: subscribe first,
+                            // then enable. Attaching to an already-loaded page is
+                            // even more exposed — its `WebMCP.enable` replay is
+                            // the only way to learn about tools it registered
+                            // before we arrived.
                             let handles = cdp_domains::start_tab_listeners(&tab, states);
                             tabs.write().unwrap().attach_listeners(&tab_id, handles);
+                            cdp_domains::enable_tab_domains(&tab, &webmcp_state).await;
                         }
                     }
                 }

@@ -81,13 +81,20 @@ impl OpenTabTool {
 
         if let Some(states) = states {
             let webmcp_state = states.4.clone();
-            cdp_domains::enable_tab_domains(&tab, &webmcp_state).await;
+            // Listeners must be running before any domain is enabled: enabling
+            // is what makes Chrome emit its authoritative replay (`WebMCP.enable`
+            // re-emits the whole tool list, `Debugger.enable` replays
+            // `scriptParsed`, ...). A subscriber created afterwards never sees
+            // those events — tokio's broadcast channel delivers nothing
+            // retroactively — and nothing re-triggers them once the page is
+            // already loaded.
             let handles = cdp_domains::start_tab_listeners(&tab, states);
             session
                 .tabs
                 .write()
                 .unwrap()
                 .attach_listeners(&tab_id, handles);
+            cdp_domains::enable_tab_domains(&tab, &webmcp_state).await;
         }
 
         Ok(CallToolResult::text_content(vec![
