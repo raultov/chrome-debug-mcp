@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.7] - 2026-11-01
+### Deprecated
+- **chrome-debug-mcp is no longer maintained.** Its successor is
+  [browser-control-mcp](https://github.com/raultov/browser-control-mcp), which
+  started from this code. This release only adds the notice to the README and
+  the package description; it changes no code.
+
 ## [1.5.6] - 2026-10-04
 ### Fixes
 - **Eliminated false `--enable-webmcp` warning in `webmcp_list_tools`:** Added an explicit `WebmcpAvailability::Pending` variant to distinguish between "WebMCP was not requested at server startup" (`NotRequested`) and "WebMCP is requested/enabled but `WebMCP.enable` response or page tools are still pending" (`Pending`). Newly registered tabs and sessions now initialize `WebmcpAvailability` to `Pending` when `--enable-webmcp` is active.

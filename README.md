@@ -4,7 +4,8 @@
 > **Deprecated.** chrome-debug-mcp is no longer maintained. Its successor is
 > **[browser-control-mcp](https://github.com/raultov/browser-control-mcp)**,
 > which started from this code and adds Firefox, several browsers at once,
-> frames of another origin and many fixes. Version 1.5.6 is the last release.
+> frames of another origin and many fixes. Version 1.5.6 is the last one with
+> changes; 1.5.7 only adds this notice.
 >
 > Switch your MCP configuration to it:
 > `npx -y @raultov/browser-control-mcp`, `brew install raultov/tap/browser-control-mcp`
