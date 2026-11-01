@@ -1,5 +1,15 @@
 # chrome-debug-mcp
 
+> [!WARNING]
+> **Deprecated.** chrome-debug-mcp is no longer maintained. Its successor is
+> **[browser-control-mcp](https://github.com/raultov/browser-control-mcp)**,
+> which started from this code and adds Firefox, several browsers at once,
+> frames of another origin and many fixes. Version 1.5.6 is the last release.
+>
+> Switch your MCP configuration to it:
+> `npx -y @raultov/browser-control-mcp`, `brew install raultov/tap/browser-control-mcp`
+> or `cargo install browser-control-mcp`.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/rust-stable-brightgreen.svg)](https://www.rust-lang.org)
 [![npm](https://img.shields.io/npm/v/@raultov/chrome-debug-mcp?label=npm)](https://www.npmjs.com/package/@raultov/chrome-debug-mcp)
